@@ -1,0 +1,44 @@
+{
+  "name": "opspilot-admin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A production-oriented B2B admin panel for runtime service configuration.",
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "predev": "npm run build --workspace=@opspilot/contracts && npm run db:generate --workspace=@opspilot/config-api",
+    "dev": "concurrently --names api,web --prefix name \"npm run dev --workspace=@opspilot/config-api\" \"npm run dev --workspace=@opspilot/web\"",
+    "prebuild": "npm run build --workspace=@opspilot/contracts && npm run db:generate --workspace=@opspilot/config-api",
+    "build": "npm run build --workspaces --if-present",
+    "db:generate": "npm run db:generate --workspace=@opspilot/config-api",
+    "db:migrate": "npm run db:migrate --workspace=@opspilot/config-api",
+    "db:migrate:init": "npm run db:migrate --workspace=@opspilot/config-api -- --name init",
+    "db:migrate:auth": "npm run db:migrate --workspace=@opspilot/config-api -- --name add_auth",
+    "db:migrate:workspace": "npm run db:migrate --workspace=@opspilot/config-api -- --name add_workspaces_and_roles",
+    "db:migrate:workflow": "npm run db:migrate --workspace=@opspilot/config-api -- --name add_config_workflow_and_audit",
+    "db:seed": "npm run db:seed --workspace=@opspilot/config-api",
+    "db:studio": "npm run db:studio --workspace=@opspilot/config-api",
+    "lint": "npm run lint --workspaces --if-present",
+    "pretest": "npm run build --workspace=@opspilot/contracts",
+    "test": "npm run test --workspaces --if-present",
+    "test:ci": "npm run test:ci --workspaces --if-present",
+    "db:deploy": "npm run db:deploy --workspace=@opspilot/config-api",
+    "verify": "npm test && npm run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=11.0.0"
+  },
+  "allowScripts": {
+    "@prisma/client@6.19.0": true,
+    "@prisma/engines@6.19.0": true,
+    "esbuild@0.28.2": true,
+    "prisma@6.19.0": true
+  }
+}
