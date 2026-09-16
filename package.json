@@ -22,7 +22,7 @@
     "db:seed": "npm run db:seed --workspace=@opspilot/config-api",
     "db:studio": "npm run db:studio --workspace=@opspilot/config-api",
     "lint": "npm run lint --workspaces --if-present",
-    "pretest": "npm run build --workspace=@opspilot/contracts",
+    "pretest": "npm run build --workspace=@opspilot/contracts && npm run db:generate --workspace=@opspilot/config-api",
     "test": "npm run test --workspaces --if-present",
     "test:ci": "npm run test:ci --workspaces --if-present",
     "db:deploy": "npm run db:deploy --workspace=@opspilot/config-api",
