@@ -31,12 +31,15 @@ export class RuntimeConfigCacheService {
       Number.isInteger(configuredTtl) && configuredTtl > 0 ? configuredTtl : 60;
   }
 
-  async read(environment: EnvironmentName): Promise<RuntimeCacheReadResult> {
+  async read(
+    projectId: string,
+    environment: EnvironmentName,
+  ): Promise<RuntimeCacheReadResult> {
     if (!this.redis.isReady()) {
       return { status: "BYPASS", value: null };
     }
 
-    const key = this.key(environment);
+    const key = this.key(projectId, environment);
     const serialized = await this.redis.get(key);
 
     if (!serialized) {
@@ -56,21 +59,25 @@ export class RuntimeConfigCacheService {
   }
 
   async write(
+    projectId: string,
     environment: EnvironmentName,
     value: CachedRuntimeConfig,
   ): Promise<boolean> {
     return this.redis.set(
-      this.key(environment),
+      this.key(projectId, environment),
       JSON.stringify(value),
       this.ttlSeconds,
     );
   }
 
-  async invalidate(environment: EnvironmentName): Promise<boolean> {
-    return this.redis.delete(this.key(environment));
+  async invalidate(
+    projectId: string,
+    environment: EnvironmentName,
+  ): Promise<boolean> {
+    return this.redis.delete(this.key(projectId, environment));
   }
 
-  private key(environment: EnvironmentName): string {
-    return `opspilot:runtime-config:${environment}`;
+  private key(projectId: string, environment: EnvironmentName): string {
+    return `opspilot:runtime-config:${projectId}:${environment}`;
   }
 }
