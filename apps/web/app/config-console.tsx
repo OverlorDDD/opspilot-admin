@@ -75,6 +75,8 @@ export function ConfigConsole({
   const canPublish = ["owner", "admin"].includes(workspace.role);
   const activeStatus = workflow?.activeRevision?.status ?? null;
   const isDraftEditable = activeStatus === "DRAFT" && canEditDrafts;
+  const demoClientHref =
+    projectId === "flowline-customer-portal" ? "/demo/portal" : "/demo";
 
   const loadProjects = useCallback(async () => {
     try {
@@ -395,7 +397,7 @@ export function ConfigConsole({
           </div>
           <a
             className="logout-button nav-link-button"
-            href="/demo"
+            href={demoClientHref}
             target="_blank"
             rel="noreferrer"
           >
