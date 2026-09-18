@@ -2,6 +2,10 @@ import { IsDefined, IsIn, IsNotEmpty, IsOptional, IsString } from "class-validat
 import { CONFIG_KEY_TYPES, EnvironmentName } from "@opspilot/contracts";
 
 export class CreateConfigDto {
+  @IsString()
+  @IsNotEmpty()
+  projectId!: string;
+
   @IsIn(["development", "staging", "production"])
   environment!: EnvironmentName;
 

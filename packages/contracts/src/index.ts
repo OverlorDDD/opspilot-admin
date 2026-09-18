@@ -31,6 +31,15 @@ export interface WorkspaceSummary {
   role: WorkspaceRole;
 }
 
+export interface ProjectSummary {
+  id: string;
+  name: string;
+}
+
+export interface ProjectListResponse {
+  items: ProjectSummary[];
+}
+
 export interface AuthResponse {
   user: UserSummary;
   workspace: WorkspaceSummary;
@@ -153,10 +162,7 @@ export interface ConfigRevisionDiffResponse {
 }
 
 export interface ConfigListResponse {
-  project: {
-    id: string;
-    name: string;
-  };
+  project: ProjectSummary;
   items: ConfigEntry[];
   total: number;
 }
@@ -164,10 +170,7 @@ export interface ConfigListResponse {
 export type RuntimeCacheStatus = "HIT" | "MISS" | "BYPASS";
 
 export interface RuntimeConfigResponse {
-  project: {
-    id: string;
-    name: string;
-  };
+  project: ProjectSummary;
   environment: EnvironmentName;
   values: Record<string, ConfigValue>;
   generatedAt: string;
@@ -178,6 +181,7 @@ export interface RuntimeConfigResponse {
 }
 
 export interface CreateConfigRequest {
+  projectId: string;
   environment: EnvironmentName;
   name: string;
   type: ConfigKeyType;
@@ -192,4 +196,55 @@ export interface UpdateConfigRequest {
 
 export interface RejectDraftRequest {
   reason?: string;
+}
+
+
+export type DispatchTaskStatus = "QUEUED" | "IN_PROGRESS" | "DONE";
+
+export interface DispatchTask {
+  id: string;
+  projectId: string;
+  title: string;
+  status: DispatchTaskStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DispatchEventType =
+  | "TASK_CREATED"
+  | "TASK_COMPLETED"
+  | "DIGEST_QUEUED"
+  | "CARRIER_SYNC_SUCCEEDED"
+  | "CARRIER_SYNC_FAILED";
+
+export interface DispatchEvent {
+  id: string;
+  projectId: string;
+  type: DispatchEventType;
+  message: string;
+  metadata: unknown;
+  createdAt: string;
+}
+
+export interface DispatchStateResponse {
+  runtime: RuntimeConfigResponse;
+  tasks: DispatchTask[];
+  events: DispatchEvent[];
+}
+
+export interface CarrierSyncAttempt {
+  number: number;
+  result: "failed" | "success";
+}
+
+export interface CarrierSyncResponse {
+  attempts: CarrierSyncAttempt[];
+  success: boolean;
+  maxRetries: number;
+  event: DispatchEvent;
+}
+
+export interface DigestQueueResponse {
+  message: string;
+  event: DispatchEvent;
 }

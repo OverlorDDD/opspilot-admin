@@ -1,70 +1,52 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { RuntimeConfigResponse } from "@opspilot/contracts";
+import { useCallback, useMemo, useState, useEffect } from "react";
+import type {
+  CarrierSyncResponse,
+  DigestQueueResponse,
+  DispatchStateResponse,
+  DispatchTask,
+} from "@opspilot/contracts";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
-const INITIAL_TASKS = [
-  { id: 1, title: "Review delayed shipment #4182", status: "In progress" },
-  { id: 2, title: "Confirm warehouse inventory", status: "Queued" },
-  { id: 3, title: "Call carrier about route 12", status: "Queued" },
-];
-const SYNC_FAILURES_BEFORE_SUCCESS = 3;
-
-type DemoTask = (typeof INITIAL_TASKS)[number];
-
-type SyncAttempt = {
-  number: number;
-  result: "failed" | "success";
-};
 
 export function DemoClient() {
-  const [runtime, setRuntime] = useState<RuntimeConfigResponse | null>(null);
-  const [tasks, setTasks] = useState<DemoTask[]>(INITIAL_TASKS);
+  const [state, setState] = useState<DispatchStateResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [action, setAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [digestMessage, setDigestMessage] = useState<string | null>(null);
-  const [syncAttempts, setSyncAttempts] = useState<SyncAttempt[]>([]);
-  const [syncRunning, setSyncRunning] = useState(false);
+  const [syncResult, setSyncResult] = useState<CarrierSyncResponse | null>(null);
 
-  const loadRuntime = useCallback(async () => {
+  const loadState = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(
-        `${API_URL}/configs/runtime?environment=staging`,
-        { cache: "no-store" },
+      const response = await apiRequest<DispatchStateResponse>(
+        `${API_URL}/demo/dispatch`,
       );
-      const body = (await response.json()) as RuntimeConfigResponse & {
-        message?: string | string[];
-      };
-
-      if (!response.ok) {
-        const message = Array.isArray(body.message)
-          ? body.message.join(", ")
-          : body.message;
-        throw new Error(message || `Runtime API returned ${response.status}`);
-      }
-
-      setRuntime(body);
+      setState(response);
     } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Could not load runtime configuration",
-      );
+      setError(errorMessage(requestError));
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadRuntime();
-  }, [loadRuntime]);
+    void loadState();
+  }, [loadState]);
 
+  const runtime = state?.runtime ?? null;
+  const tasks = state?.tasks ?? [];
+  const events = state?.events ?? [];
   const config = runtime?.values ?? {};
-  const maxTasks = numberValue(config["limits.maxTasksPerUser"], 25);
+
+  const maxTasks = Math.max(
+    0,
+    Math.floor(numberValue(config["limits.maxTasksPerUser"], 25)),
+  );
   const maintenanceMode = booleanValue(
     config["service.maintenanceMode"],
     false,
@@ -77,57 +59,86 @@ export function DemoClient() {
     0,
     Math.floor(numberValue(config["limits.maxRetries"], 3)),
   );
-  const taskLimitReached = tasks.length >= maxTasks;
+
+  const activeTasks = useMemo(
+    () => tasks.filter((task) => task.status !== "DONE"),
+    [tasks],
+  );
+  const taskLimitReached = activeTasks.length >= maxTasks;
 
   const capacityPercent = useMemo(() => {
     if (maxTasks <= 0) return 100;
-    return Math.min(100, Math.round((tasks.length / maxTasks) * 100));
-  }, [tasks.length, maxTasks]);
+    return Math.min(
+      100,
+      Math.round((activeTasks.length / maxTasks) * 100),
+    );
+  }, [activeTasks.length, maxTasks]);
 
-  function createTask(): void {
-    if (maintenanceMode || taskLimitReached) return;
-
-    const id = Math.max(0, ...tasks.map((task) => task.id)) + 1;
-    setTasks((current) => [
-      ...current,
-      {
-        id,
-        title: `Investigate operations alert #${4200 + id}`,
-        status: "Queued",
-      },
-    ]);
+  async function createTask(): Promise<void> {
+    setAction("create-task");
+    setError(null);
+    try {
+      await apiRequest<DispatchTask>(`${API_URL}/demo/dispatch/tasks`, {
+        method: "POST",
+      });
+      await loadState();
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    } finally {
+      setAction(null);
+    }
   }
 
-  function sendDigest(): void {
-    if (maintenanceMode || !weeklyDigest) return;
-    setDigestMessage(
-      `Digest queued for ${tasks.length} active tasks at ${new Date().toLocaleTimeString()}.`,
-    );
+  async function completeTask(taskId: string): Promise<void> {
+    setAction(`complete-${taskId}`);
+    setError(null);
+    try {
+      await apiRequest<DispatchTask>(
+        `${API_URL}/demo/dispatch/tasks/${taskId}/complete`,
+        { method: "PATCH" },
+      );
+      await loadState();
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    } finally {
+      setAction(null);
+    }
+  }
+
+  async function sendDigest(): Promise<void> {
+    setAction("digest");
+    setError(null);
+    try {
+      const response = await apiRequest<DigestQueueResponse>(
+        `${API_URL}/demo/dispatch/digest`,
+        { method: "POST" },
+      );
+      setDigestMessage(response.message);
+      await loadState();
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    } finally {
+      setAction(null);
+    }
   }
 
   async function runCarrierSync(): Promise<void> {
-    if (maintenanceMode || syncRunning) return;
-
-    setSyncRunning(true);
-    setSyncAttempts([]);
-
-    const totalAttemptsAllowed = 1 + maxRetries;
-    const attempts: SyncAttempt[] = [];
-
-    for (let attempt = 1; attempt <= totalAttemptsAllowed; attempt += 1) {
-      await sleep(260);
-      const succeeds = attempt > SYNC_FAILURES_BEFORE_SUCCESS;
-      attempts.push({ number: attempt, result: succeeds ? "success" : "failed" });
-      setSyncAttempts([...attempts]);
-      if (succeeds) break;
+    setAction("carrier-sync");
+    setError(null);
+    setSyncResult(null);
+    try {
+      const response = await apiRequest<CarrierSyncResponse>(
+        `${API_URL}/demo/dispatch/carrier-sync`,
+        { method: "POST" },
+      );
+      setSyncResult(response);
+      await loadState();
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    } finally {
+      setAction(null);
     }
-
-    setSyncRunning(false);
   }
-
-  const syncSucceeded = syncAttempts.some((attempt) => attempt.result === "success");
-  const syncFinishedWithoutSuccess =
-    syncAttempts.length > 0 && !syncRunning && !syncSucceeded;
 
   return (
     <main className="dispatch-app">
@@ -161,51 +172,67 @@ export function DemoClient() {
           <div>
             <p>OPERATIONS WORKSPACE</p>
             <h1>Good afternoon, Alex.</h1>
-            <span>Monitor daily work and carrier integrations.</span>
+            <span>Real demo data is persisted through NestJS and PostgreSQL.</span>
           </div>
           <div className="dispatch-header-actions">
             <div className={`dispatch-runtime-pill ${runtime?.cache.status?.toLowerCase() ?? "loading"}`}>
               <span />
               Runtime {runtime?.cache.status ?? (loading ? "LOADING" : "—")}
             </div>
-            <button disabled={loading} type="button" onClick={() => void loadRuntime()}>
+            <button disabled={loading} type="button" onClick={() => void loadState()}>
               {loading ? "Refreshing…" : "Refresh config"}
             </button>
           </div>
         </header>
 
+        <div className="dispatch-control-plane">
+          <strong>Controlled by OpsPilot</strong>
+          <span>
+            These policies are read from the published runtime configuration and
+            enforced again by the Dispatch backend. Reloading this page does not
+            reset tasks or activity history.
+          </span>
+        </div>
+
         {maintenanceMode && (
           <div className="dispatch-maintenance" role="status">
             <div>
               <strong>Scheduled maintenance is active</strong>
-              <span>This product is now read-only. Create, send and sync actions are disabled.</span>
+              <span>
+                Server-side write operations are blocked until OpsPilot publishes
+                maintenance mode = false.
+              </span>
             </div>
             <span>READ ONLY</span>
           </div>
         )}
 
-        {error && <div className="dispatch-error" role="alert">Runtime API error: {error}</div>}
+        {error && (
+          <div className="dispatch-error" role="alert">
+            Action rejected by Dispatch API: {error}
+          </div>
+        )}
 
         <section className="dispatch-kpis">
           <article>
             <span>Active work</span>
-            <strong>{tasks.length}</strong>
-            <small>of {maxTasks} allowed</small>
+            <strong>{activeTasks.length}</strong>
+            <small>of {maxTasks} allowed by OpsPilot</small>
           </article>
           <article>
             <span>Weekly digest</span>
             <strong>{weeklyDigest ? "ON" : "OFF"}</strong>
-            <small>{weeklyDigest ? "Monday · 09:00" : "Feature disabled"}</small>
+            <small>{weeklyDigest ? "Server action enabled" : "Endpoint policy disabled"}</small>
           </article>
           <article>
             <span>Carrier retries</span>
             <strong>{maxRetries}</strong>
-            <small>after first failed request</small>
+            <small>after the first failed request</small>
           </article>
           <article>
             <span>Service state</span>
             <strong>{maintenanceMode ? "PAUSED" : "LIVE"}</strong>
-            <small>{maintenanceMode ? "Writes disabled" : "All systems operational"}</small>
+            <small>{maintenanceMode ? "Writes rejected by API" : "All writes available"}</small>
           </article>
         </section>
 
@@ -213,36 +240,66 @@ export function DemoClient() {
           <article className="dispatch-card dispatch-work-card">
             <div className="dispatch-card-heading">
               <div>
-                <p>WORK QUEUE</p>
+                <p>PERSISTENT WORK QUEUE</p>
                 <h2>Today&apos;s operations</h2>
               </div>
               <button
                 className="dispatch-primary-action"
-                disabled={maintenanceMode || taskLimitReached}
+                disabled={
+                  maintenanceMode ||
+                  taskLimitReached ||
+                  action === "create-task"
+                }
                 type="button"
-                onClick={createTask}
+                onClick={() => void createTask()}
               >
-                + New task
+                {action === "create-task" ? "Creating…" : "+ New task"}
               </button>
             </div>
 
             <div className="dispatch-capacity">
-              <div><span>Capacity used</span><strong>{tasks.length} / {maxTasks}</strong></div>
+              <div>
+                <span>Capacity used</span>
+                <strong>{activeTasks.length} / {maxTasks}</strong>
+              </div>
               <div><span style={{ width: `${capacityPercent}%` }} /></div>
             </div>
 
             {taskLimitReached && !maintenanceMode && (
               <div className="dispatch-inline-warning">
-                Task creation is blocked by <code>limits.maxTasksPerUser = {maxTasks}</code>.
+                The backend rejects new tasks because{" "}
+                <code>limits.maxTasksPerUser = {maxTasks}</code>.
               </div>
             )}
 
             <div className="dispatch-task-list">
-              {tasks.slice(-6).reverse().map((task) => (
-                <div className="dispatch-task" key={task.id}>
-                  <span className="dispatch-check">✓</span>
-                  <div><strong>{task.title}</strong><small>Task #{task.id} · Operations</small></div>
-                  <span className="dispatch-task-status">{task.status}</span>
+              {tasks.slice(-8).reverse().map((task) => (
+                <div className={`dispatch-task ${task.status === "DONE" ? "done" : ""}`} key={task.id}>
+                  <span className="dispatch-check">
+                    {task.status === "DONE" ? "✓" : "•"}
+                  </span>
+                  <div>
+                    <strong>{task.title}</strong>
+                    <small>
+                      Persisted task · {new Date(task.createdAt).toLocaleTimeString()}
+                    </small>
+                  </div>
+                  <span className="dispatch-task-status">
+                    {taskStatusLabel(task.status)}
+                  </span>
+                  {task.status !== "DONE" && (
+                    <button
+                      className="dispatch-task-action"
+                      disabled={
+                        maintenanceMode ||
+                        action === `complete-${task.id}`
+                      }
+                      type="button"
+                      onClick={() => void completeTask(task.id)}
+                    >
+                      {action === `complete-${task.id}` ? "Saving…" : "Complete"}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -257,17 +314,28 @@ export function DemoClient() {
                 </span>
               </div>
               <p className="dispatch-copy">
-                The report action exists only when the published feature flag is enabled.
+                This is now a real backend action. When enabled, NestJS stores a
+                persistent DIGEST_QUEUED event; when disabled, the API rejects it.
               </p>
               <button
                 className="dispatch-secondary-action"
-                disabled={maintenanceMode || !weeklyDigest}
+                disabled={
+                  maintenanceMode ||
+                  !weeklyDigest ||
+                  action === "digest"
+                }
                 type="button"
-                onClick={sendDigest}
+                onClick={() => void sendDigest()}
               >
-                {weeklyDigest ? "Send digest now" : "Digest unavailable"}
+                {action === "digest"
+                  ? "Queueing…"
+                  : weeklyDigest
+                    ? "Send digest now"
+                    : "Digest unavailable"}
               </button>
-              {digestMessage && weeklyDigest && <div className="dispatch-success">{digestMessage}</div>}
+              {digestMessage && weeklyDigest && (
+                <div className="dispatch-success">{digestMessage}</div>
+              )}
             </article>
 
             <article className="dispatch-card">
@@ -276,29 +344,54 @@ export function DemoClient() {
                 <span className="dispatch-retry-count">{maxRetries} retries</span>
               </div>
               <p className="dispatch-copy">
-                This simulated carrier fails its first {SYNC_FAILURES_BEFORE_SUCCESS} requests. The runtime retry limit decides whether the sync eventually succeeds.
+                The simulated carrier returns 503 for its first 3 attempts.
+                OpsPilot controls how many retries the backend is allowed to make.
               </p>
               <button
                 className="dispatch-secondary-action"
-                disabled={maintenanceMode || syncRunning}
+                disabled={maintenanceMode || action === "carrier-sync"}
                 type="button"
                 onClick={() => void runCarrierSync()}
               >
-                {syncRunning ? "Syncing…" : "Run carrier sync"}
+                {action === "carrier-sync" ? "Syncing…" : "Run carrier sync"}
               </button>
 
               <div className="dispatch-attempts">
-                {syncAttempts.map((attempt) => (
+                {syncResult?.attempts.map((attempt) => (
                   <div className={attempt.result} key={attempt.number}>
                     <span>Attempt {attempt.number}</span>
                     <strong>{attempt.result === "success" ? "200 OK" : "503 FAILED"}</strong>
                   </div>
                 ))}
-                {syncSucceeded && <p className="dispatch-success">Carrier sync completed successfully.</p>}
-                {syncFinishedWithoutSuccess && (
-                  <p className="dispatch-failure">
-                    Sync stopped. Increase <code>limits.maxRetries</code> and publish the new config to allow more attempts.
+                {syncResult?.success && (
+                  <p className="dispatch-success">
+                    Carrier sync completed. The result is stored in PostgreSQL.
                   </p>
+                )}
+                {syncResult && !syncResult.success && (
+                  <p className="dispatch-failure">
+                    Sync stopped after the configured retry budget. Increase{" "}
+                    <code>limits.maxRetries</code> in OpsPilot, approve and publish it,
+                    then try again.
+                  </p>
+                )}
+              </div>
+            </article>
+
+            <article className="dispatch-card dispatch-activity-card">
+              <div className="dispatch-card-heading compact">
+                <div><p>PERSISTENT ACTIVITY</p><h2>Backend event log</h2></div>
+                <span className="dispatch-retry-count">{events.length} recent</span>
+              </div>
+              <div className="dispatch-activity-list">
+                {events.length ? events.map((event) => (
+                  <div key={event.id}>
+                    <span>{eventTypeLabel(event.type)}</span>
+                    <strong>{event.message}</strong>
+                    <small>{new Date(event.createdAt).toLocaleString()}</small>
+                  </div>
+                )) : (
+                  <p className="dispatch-copy">No demo events yet. Create a task, queue a digest or run sync.</p>
                 )}
               </div>
             </article>
@@ -306,7 +399,7 @@ export function DemoClient() {
         </section>
 
         <footer className="dispatch-footer">
-          <span>Flowline Dispatch · demo consumer</span>
+          <span>Flowline Dispatch · persistent runtime-config consumer</span>
           <span>
             Config generated {runtime ? new Date(runtime.generatedAt).toLocaleTimeString() : "—"}
           </span>
@@ -314,6 +407,31 @@ export function DemoClient() {
       </section>
     </main>
   );
+}
+
+async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    ...init,
+    credentials: "include",
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
+  });
+
+  const body = (await response.json().catch(() => ({}))) as T & {
+    message?: string | string[];
+  };
+
+  if (!response.ok) {
+    const message = Array.isArray(body.message)
+      ? body.message.join(", ")
+      : body.message;
+    throw new Error(message || `Request failed with status ${response.status}`);
+  }
+
+  return body;
 }
 
 function numberValue(value: unknown, fallback: number): number {
@@ -324,6 +442,20 @@ function booleanValue(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
-function sleep(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+function taskStatusLabel(status: DispatchTask["status"]): string {
+  if (status === "IN_PROGRESS") return "In progress";
+  if (status === "DONE") return "Done";
+  return "Queued";
+}
+
+function eventTypeLabel(type: string): string {
+  return type
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown request error";
 }

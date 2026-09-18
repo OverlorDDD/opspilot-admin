@@ -97,7 +97,9 @@ model Project {
   name        String
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
-  configs     ConfigEntry[]
+  configs        ConfigEntry[]
+  dispatchTasks  DispatchTask[]
+  dispatchEvents DispatchEvent[]
 
   @@map("projects")
 }
@@ -164,4 +166,45 @@ model AuditLog {
   @@index([workspaceId, createdAt])
   @@index([configEntryId, createdAt])
   @@map("audit_logs")
+}
+
+
+enum DispatchTaskStatus {
+  QUEUED
+  IN_PROGRESS
+  DONE
+}
+
+enum DispatchEventType {
+  TASK_CREATED
+  TASK_COMPLETED
+  DIGEST_QUEUED
+  CARRIER_SYNC_SUCCEEDED
+  CARRIER_SYNC_FAILED
+}
+
+model DispatchTask {
+  id        String             @id @default(cuid())
+  projectId String             @map("project_id")
+  project   Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title     String
+  status    DispatchTaskStatus @default(QUEUED)
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
+
+  @@index([projectId, status])
+  @@map("dispatch_tasks")
+}
+
+model DispatchEvent {
+  id        String            @id @default(cuid())
+  projectId String            @map("project_id")
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type      DispatchEventType
+  message   String
+  metadata  Json?
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  @@index([projectId, createdAt])
+  @@map("dispatch_events")
 }

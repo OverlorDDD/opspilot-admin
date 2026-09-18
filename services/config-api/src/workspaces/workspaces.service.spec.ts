@@ -36,6 +36,15 @@ function createService() {
       findUnique: jest.fn().mockResolvedValue(null),
       findFirst: jest.fn().mockResolvedValue(null),
       count: jest.fn().mockResolvedValue(1),
+      findMany: jest.fn().mockResolvedValue([
+        {
+          workspaceId: workspace.id,
+          userId: user.id,
+          role: "viewer",
+          createdAt: new Date("2026-01-02T00:00:00.000Z"),
+          user,
+        },
+      ]),
       upsert: jest.fn().mockResolvedValue({
         workspaceId: workspace.id,
         userId: user.id,
@@ -53,6 +62,20 @@ function createService() {
 }
 
 describe("WorkspacesService role administration", () => {
+
+  it("lists only members of the current workspace", async () => {
+    const { service, prisma } = createService();
+
+    const result = await service.listRegisteredUsers(workspace.id, "admin");
+
+    expect(prisma.workspaceMember.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { workspaceId: workspace.id } }),
+    );
+    expect(result.users).toHaveLength(1);
+    expect(result.users[0].user.email).toBe(user.email);
+    expect(result.users[0].role).toBe("viewer");
+  });
+
   it("adds a registered user to the workspace with the selected role", async () => {
     const { service, prisma } = createService();
     prisma.workspaceMember.upsert.mockResolvedValue({
