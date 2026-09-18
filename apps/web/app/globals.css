@@ -601,3 +601,100 @@ select:focus, input:focus, textarea:focus { border-color: var(--green); box-shad
   .dispatch-task-status { grid-column: 2; justify-self: start; }
   .dispatch-footer { flex-direction: column; }
 }
+
+
+/* Phase: persistent Flowline Dispatch + central control plane */
+.dispatch-control-plane {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(124, 139, 255, 0.28);
+  border-radius: 14px;
+  background: rgba(89, 101, 220, 0.08);
+}
+
+.dispatch-control-plane strong {
+  color: #dfe4ff;
+  font-size: 0.92rem;
+}
+
+.dispatch-control-plane span {
+  color: #9ca7c7;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.dispatch-task.done {
+  opacity: 0.62;
+}
+
+.dispatch-task-action {
+  border: 1px solid rgba(130, 147, 190, 0.35);
+  border-radius: 10px;
+  padding: 0.45rem 0.65rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: #dfe4ff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.dispatch-task-action:hover:not(:disabled) {
+  background: rgba(124, 139, 255, 0.14);
+}
+
+.dispatch-task-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.dispatch-activity-card {
+  min-height: 220px;
+}
+
+.dispatch-activity-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.dispatch-activity-list > div {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.72rem 0;
+  border-bottom: 1px solid rgba(128, 144, 183, 0.14);
+}
+
+.dispatch-activity-list > div:last-child {
+  border-bottom: 0;
+}
+
+.dispatch-activity-list span {
+  color: #8e9cff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dispatch-activity-list strong {
+  color: #e8ebf7;
+  font-size: 0.82rem;
+}
+
+.dispatch-activity-list small {
+  color: #77819e;
+  font-size: 0.72rem;
+}
+
+@media (max-width: 760px) {
+  .dispatch-task {
+    grid-template-columns: auto 1fr;
+  }
+
+  .dispatch-task-status,
+  .dispatch-task-action {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
