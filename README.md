@@ -132,3 +132,33 @@ Beginner walkthrough: `docs/lessons/12-git-github-ci.md`.
 ## CI test note
 
 Before Jest runs, the root `pretest` script builds `@opspilot/contracts`. This keeps Jest focused on the NestJS source while tests consume the shared contracts package through its compiled `dist` output. npm install-script approvals for the pinned Prisma/esbuild versions are declared in the root `allowScripts` policy.
+
+
+## Phase 8: Persistent Dispatch and central control plane
+
+OpsPilot now demonstrates a stronger B2B use case: one company workspace can centrally manage runtime policy for multiple products instead of rebuilding the same admin/RBAC/audit workflow inside every application.
+
+- Workspace = company/organization.
+- Project = one product or service inside that company.
+- The admin UI now has a Project selector.
+- Seed data includes **Flowline Dispatch** and **Flowline Customer Portal**.
+- Redis runtime cache keys are scoped by project + environment.
+- Flowline Dispatch tasks are stored in PostgreSQL and survive page reloads.
+- Task completion, weekly digest actions and carrier sync results create persistent backend events.
+- Runtime policy is enforced by the NestJS consumer backend:
+  - `limits.maxTasksPerUser` limits task creation;
+  - `service.maintenanceMode` rejects write actions;
+  - `notifications.weeklyDigest` enables/disables digest queueing;
+  - `limits.maxRetries` changes whether the simulated carrier integration succeeds.
+- Draft edits are now saved as part of **Submit for approval**, so the extra Save draft button is no longer required.
+- User management remains restricted to owner/admin and the returned member list is scoped to the current workspace.
+
+Apply the committed database migration before running this phase:
+
+```powershell
+npm run db:deploy
+npm run db:generate
+npm run db:seed
+```
+
+Beginner walkthrough: `docs/lessons/14-persistent-dispatch-control-plane.md`.
