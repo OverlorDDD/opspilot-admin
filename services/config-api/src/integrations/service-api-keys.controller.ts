@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -32,13 +33,26 @@ export class ServiceApiKeysController {
   @Get()
   list(
     @Req() request: AuthenticatedRequest,
-    @Query("projectId") projectId: string,
-    @Query("environment") environment: EnvironmentName,
+    @Query("projectId") projectId?: string,
+    @Query("environment") environment?: string,
   ): Promise<ServiceApiKeyListResponse> {
+    if (!projectId) {
+      throw new BadRequestException("projectId is required");
+    }
+
+    if (
+      !environment ||
+      !["development", "staging", "production"].includes(environment)
+    ) {
+      throw new BadRequestException(
+        "environment must be development, staging or production",
+      );
+    }
+
     return this.serviceApiKeys.list(
       request.workspace!.id,
       projectId,
-      environment,
+      environment as EnvironmentName,
     );
   }
 
