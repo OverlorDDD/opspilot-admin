@@ -41,6 +41,7 @@ function createService() {
   const prisma = {
     project: {
       findFirst: jest.fn().mockResolvedValue(project),
+      findUnique: jest.fn().mockResolvedValue(project),
       findMany: jest.fn().mockResolvedValue([project]),
     },
     configEntry: {
