@@ -96,14 +96,18 @@ describe("ConfigsService", () => {
   });
 
   it("uses PostgreSQL on a cache miss, stores the snapshot, and excludes unpublished keys", async () => {
-    const { service, runtimeCache } = createService();
+    const { service, prisma, runtimeCache } = createService();
 
     const result = await service.getRuntime("staging", "flowline-service");
 
     expect(result.values["limits.maxTasksPerUser"]).toBe(25);
     expect(result.values["service.maintenanceMode"]).toBe(false);
-    expect(result.values["notifications.weeklyDigest"]).toBeUndefined();
     expect(result.cache.status).toBe("MISS");
+    expect(prisma.configEntry.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ isPublished: true }),
+      }),
+    );
     expect(runtimeCache.write).toHaveBeenCalledWith(
       "flowline-service",
       "staging",
