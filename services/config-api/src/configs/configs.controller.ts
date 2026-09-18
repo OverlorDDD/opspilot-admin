@@ -74,10 +74,12 @@ export class ConfigsController {
   @UseGuards(JwtAuthGuard, WorkspaceRoleGuard)
   @Roles("owner", "admin", "editor", "approver", "viewer")
   async runtime(
+    @Req() request: AuthenticatedRequest,
     @Query("environment") environment?: string,
     @Query("projectId") projectId?: string,
   ): Promise<RuntimeConfigResponse> {
-    return this.configsService.getRuntime(
+    return this.configsService.getRuntimeForWorkspace(
+      request.workspace!.id,
       this.parseEnvironment(environment),
       projectId,
     );
