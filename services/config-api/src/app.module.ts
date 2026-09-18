@@ -6,6 +6,7 @@ import { ConfigsModule } from "./configs/configs.module";
 import { PrismaModule } from "./database/prisma.module";
 import { RedisCacheModule } from "./cache/redis-cache.module";
 import { DispatchModule } from "./dispatch/dispatch.module";
+import { IntegrationsModule } from "./integrations/integrations.module";
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { DispatchModule } from "./dispatch/dispatch.module";
     AuthModule,
     ConfigsModule,
     DispatchModule,
+    IntegrationsModule,
   ],
   controllers: [HealthController],
 })
