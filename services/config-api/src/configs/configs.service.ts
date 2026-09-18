@@ -63,6 +63,15 @@ export class ConfigsService {
     return this.getRuntimeForProject(projectId, environment);
   }
 
+  async getRuntimeForWorkspace(
+    workspaceId: string,
+    environment: EnvironmentName = "staging",
+    projectId?: string,
+  ): Promise<RuntimeConfigResponse> {
+    const project = await this.getProject(workspaceId, projectId);
+    return this.getRuntimeForProject(project.id, environment);
+  }
+
   async getRuntimeForProject(
     projectId: string,
     environment: EnvironmentName,
