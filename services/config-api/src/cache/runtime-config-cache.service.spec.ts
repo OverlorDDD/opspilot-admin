@@ -36,7 +36,7 @@ describe("RuntimeConfigCacheService", () => {
       }),
     );
 
-    const result = await service.read("staging");
+    const result = await service.read("flowline-service", "staging");
 
     expect(result.status).toBe("HIT");
     expect(result.value?.values["limits.maxTasksPerUser"]).toBe(25);
@@ -46,7 +46,7 @@ describe("RuntimeConfigCacheService", () => {
     const { service, redis } = createService();
     redis.get.mockResolvedValue(null);
 
-    const result = await service.read("staging");
+    const result = await service.read("flowline-service", "staging");
 
     expect(result).toEqual({ status: "MISS", value: null });
   });
@@ -55,7 +55,7 @@ describe("RuntimeConfigCacheService", () => {
     const { service, redis } = createService();
     redis.isReady.mockReturnValue(false);
 
-    const result = await service.read("staging");
+    const result = await service.read("flowline-service", "staging");
 
     expect(result).toEqual({ status: "BYPASS", value: null });
     expect(redis.get).not.toHaveBeenCalled();
@@ -64,10 +64,10 @@ describe("RuntimeConfigCacheService", () => {
   it("deletes the exact environment cache key during invalidation", async () => {
     const { service, redis } = createService();
 
-    await service.invalidate("production");
+    await service.invalidate("flowline-service", "production");
 
     expect(redis.delete).toHaveBeenCalledWith(
-      "opspilot:runtime-config:production",
+      "opspilot:runtime-config:flowline-service:production",
     );
   });
 });
