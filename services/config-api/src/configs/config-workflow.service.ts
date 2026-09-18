@@ -136,7 +136,11 @@ export class ConfigWorkflowService {
     const draft = await this.findDraft(configEntryId);
 
     if (request.value !== undefined) {
-      this.configsService.validateValue(config.type as ConfigKeyType, request.value);
+      this.configsService.validateValue(
+        config.type as ConfigKeyType,
+        request.value,
+        config.name,
+      );
     }
 
     const nextValue = request.value ?? (draft.value as ConfigValue);
@@ -176,7 +180,11 @@ export class ConfigWorkflowService {
     const draft = await this.findDraft(configEntryId);
 
     if (request.value !== undefined) {
-      this.configsService.validateValue(config.type as ConfigKeyType, request.value);
+      this.configsService.validateValue(
+        config.type as ConfigKeyType,
+        request.value,
+        config.name,
+      );
     }
 
     const nextValue = request.value ?? (draft.value as ConfigValue);
