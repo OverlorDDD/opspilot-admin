@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -52,7 +53,7 @@ export class ServiceApiKeysService {
     const project = await this.assertProject(input.workspaceId, input.projectId);
     const name = input.name.trim();
     if (!name) {
-      throw new NotFoundException("Service key name is required");
+      throw new BadRequestException("Service key name is required");
     }
 
     const secret = `opk_${randomBytes(32).toString("base64url")}`;
