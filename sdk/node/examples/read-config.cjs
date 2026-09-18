@@ -17,13 +17,15 @@ async function main() {
     timeoutMs: 5_000,
   });
 
-  const snapshot = await client.refresh();
+  const first = await client.refresh();
+  const second = await client.getConfig();
 
-  console.log("Connected to:", snapshot.project.name);
-  console.log("Environment:", snapshot.environment);
-  console.log("SDK source:", snapshot.sdk.source);
+  console.log("Connected to:", first.project.name);
+  console.log("Environment:", first.environment);
+  console.log("First read source:", first.sdk.source);
+  console.log("Second read source:", second.sdk.source);
   console.log("Values:");
-  console.log(JSON.stringify(snapshot.values, null, 2));
+  console.log(JSON.stringify(second.values, null, 2));
 }
 
 main().catch((error) => {
