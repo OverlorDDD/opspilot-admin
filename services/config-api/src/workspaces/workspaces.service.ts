@@ -117,33 +117,26 @@ export class WorkspacesService {
       throw new NotFoundException("Workspace was not found");
     }
 
-    const users = await this.prisma.user.findMany({
-      include: {
-        memberships: {
-          where: { workspaceId },
-          select: { role: true, createdAt: true },
-        },
-      },
+    const memberships = await this.prisma.workspaceMember.findMany({
+      where: { workspaceId },
+      include: { user: true },
       orderBy: { createdAt: "asc" },
     });
 
     return {
       workspace: this.toSummary(workspace, actorRole),
-      users: users.map((user) => {
-        const membership = user.memberships[0] ?? null;
-        return {
-          user: {
-            id: user.id,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            createdAt: user.createdAt.toISOString(),
-          },
-          isMember: Boolean(membership),
-          role: (membership?.role as WorkspaceRole | undefined) ?? null,
-          joinedAt: membership?.createdAt.toISOString() ?? null,
-        } satisfies WorkspaceUserAccess;
-      }),
+      users: memberships.map((membership) => ({
+        user: {
+          id: membership.user.id,
+          email: membership.user.email,
+          firstName: membership.user.firstName,
+          lastName: membership.user.lastName,
+          createdAt: membership.user.createdAt.toISOString(),
+        },
+        isMember: true,
+        role: membership.role as WorkspaceRole,
+        joinedAt: membership.createdAt.toISOString(),
+      })),
     };
   }
 
