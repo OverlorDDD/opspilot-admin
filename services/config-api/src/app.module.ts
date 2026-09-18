@@ -5,6 +5,7 @@ import { HealthController } from "./health.controller";
 import { ConfigsModule } from "./configs/configs.module";
 import { PrismaModule } from "./database/prisma.module";
 import { RedisCacheModule } from "./cache/redis-cache.module";
+import { DispatchModule } from "./dispatch/dispatch.module";
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { RedisCacheModule } from "./cache/redis-cache.module";
     RedisCacheModule,
     AuthModule,
     ConfigsModule,
+    DispatchModule,
   ],
   controllers: [HealthController],
 })
