@@ -994,3 +994,18 @@ select:focus, input:focus, textarea:focus { border-color: var(--green); box-shad
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Keep Dispatch task actions readable at desktop widths. */
+@media (min-width: 761px) {
+  .dispatch-task {
+    grid-template-columns: 28px minmax(0, 1fr) max-content max-content;
+  }
+}
+
+.dispatch-task-action {
+  min-width: 76px;
+  width: auto;
+  white-space: nowrap;
+  line-height: 1.1;
+}
