@@ -85,6 +85,8 @@ export const AUDIT_ACTIONS = [
   "DRAFT_APPROVED",
   "DRAFT_REJECTED",
   "CONFIG_PUBLISHED",
+  "SERVICE_KEY_CREATED",
+  "SERVICE_KEY_REVOKED",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -247,4 +249,33 @@ export interface CarrierSyncResponse {
 export interface DigestQueueResponse {
   message: string;
   event: DispatchEvent;
+}
+
+
+export interface ServiceApiKeySummary {
+  id: string;
+  projectId: string;
+  projectName: string;
+  environment: EnvironmentName;
+  name: string;
+  keyPrefix: string;
+  scope: "runtime:read";
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
+export interface ServiceApiKeyListResponse {
+  items: ServiceApiKeySummary[];
+}
+
+export interface CreateServiceApiKeyRequest {
+  projectId: string;
+  environment: EnvironmentName;
+  name: string;
+}
+
+export interface CreateServiceApiKeyResponse {
+  item: ServiceApiKeySummary;
+  secret: string;
 }
