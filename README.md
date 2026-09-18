@@ -162,3 +162,20 @@ npm run db:seed
 ```
 
 Beginner walkthrough: `docs/lessons/14-persistent-dispatch-control-plane.md`.
+
+
+## Phase 9: External consumer integration
+
+OpsPilot now has a machine-to-machine integration path for real customer backends.
+
+- owner/admin can issue project + environment scoped service API keys;
+- raw secrets are shown once; PostgreSQL stores only SHA-256 hashes;
+- credentials have a single `runtime:read` scope and support revocation;
+- `lastUsedAt` makes real usage visible in the admin UI;
+- external services use `GET /api/runtime/v1/config` with a Bearer service key;
+- the old admin runtime inspector is JWT-protected;
+- `sdk/node` contains a small publishable `@opspilot/node` client;
+- SDK snapshots support `network`, `memory` and stale-on-error behavior;
+- a runnable consumer example lives in `sdk/node/examples/read-config.cjs`.
+
+Walkthrough: `docs/lessons/15-service-api-keys-and-node-sdk.md`.
