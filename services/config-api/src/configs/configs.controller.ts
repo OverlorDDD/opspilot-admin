@@ -17,6 +17,7 @@ import {
   ConfigWorkflowResponse,
   CreateConfigRequest,
   EnvironmentName,
+  ProjectListResponse,
   RuntimeConfigResponse,
   UpdateConfigRequest,
 } from "@opspilot/contracts";
@@ -45,24 +46,39 @@ export class ConfigsController {
     private readonly workflowService: ConfigWorkflowService,
   ) {}
 
+  @Get("projects")
+  @UseGuards(JwtAuthGuard, WorkspaceRoleGuard)
+  @Roles("owner", "admin", "editor", "approver", "viewer")
+  listProjects(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<ProjectListResponse> {
+    return this.configsService.listProjects(request.workspace!.id);
+  }
+
   @Get()
   @UseGuards(JwtAuthGuard, WorkspaceRoleGuard)
   @Roles("owner", "admin", "editor", "approver", "viewer")
   async list(
     @Req() request: AuthenticatedRequest,
     @Query("environment") environment?: string,
+    @Query("projectId") projectId?: string,
   ): Promise<ConfigListResponse> {
     return this.configsService.list(
       this.parseEnvironment(environment),
       request.workspace!.id,
+      projectId,
     );
   }
 
   @Get("runtime")
   async runtime(
     @Query("environment") environment?: string,
+    @Query("projectId") projectId?: string,
   ): Promise<RuntimeConfigResponse> {
-    return this.configsService.getRuntime(this.parseEnvironment(environment));
+    return this.configsService.getRuntime(
+      this.parseEnvironment(environment),
+      projectId,
+    );
   }
 
   @Get(":id")
@@ -94,6 +110,7 @@ export class ConfigsController {
   ): Promise<ConfigEntry> {
     return this.configsService.create(
       {
+        projectId: request.projectId,
         environment: request.environment,
         name: request.name,
         type: request.type,
@@ -176,12 +193,17 @@ export class ConfigsController {
   @Roles("owner", "admin", "editor")
   submit(
     @Param("id") id: string,
+    @Body() body: UpdateConfigDto,
     @Req() request: AuthenticatedRequest,
   ): Promise<ConfigWorkflowResponse> {
     return this.workflowService.submit(
       id,
       request.workspace!.id,
       request.user!.id,
+      {
+        value: body.value as UpdateConfigRequest["value"],
+        description: body.description,
+      },
     );
   }
 
