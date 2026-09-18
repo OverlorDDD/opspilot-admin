@@ -9,6 +9,7 @@ import type {
   ConfigRevisionStatus,
   ConfigWorkflowResponse,
   EnvironmentName,
+  ProjectListResponse,
   RuntimeConfigResponse,
   UserSummary,
   WorkspaceSummary,
@@ -49,6 +50,8 @@ export function ConfigConsole({
   onUserUpdated: (user: UserSummary) => void;
 }) {
   const [environment, setEnvironment] = useState<EnvironmentName>("staging");
+  const [projectId, setProjectId] = useState("flowline-service");
+  const [projects, setProjects] = useState<ProjectListResponse["items"]>([]);
   const [data, setData] = useState<ConfigListResponse | null>(null);
   const [selected, setSelected] = useState<ConfigEntry | null>(null);
   const [workflow, setWorkflow] = useState<ConfigWorkflowResponse | null>(null);
@@ -73,12 +76,29 @@ export function ConfigConsole({
   const activeStatus = workflow?.activeRevision?.status ?? null;
   const isDraftEditable = activeStatus === "DRAFT" && canEditDrafts;
 
+  const loadProjects = useCallback(async () => {
+    try {
+      const response = await apiRequest<ProjectListResponse>(
+        `${API_URL}/configs/projects`,
+      );
+      setProjects(response.items);
+      if (
+        response.items.length > 0 &&
+        !response.items.some((project) => project.id === projectId)
+      ) {
+        setProjectId(response.items[0].id);
+      }
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    }
+  }, [projectId]);
+
   const loadConfigs = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const response = await apiRequest<ConfigListResponse>(
-        `${API_URL}/configs?environment=${environment}`,
+        `${API_URL}/configs?environment=${environment}&projectId=${encodeURIComponent(projectId)}`,
       );
       setData(response);
     } catch (requestError) {
@@ -86,13 +106,13 @@ export function ConfigConsole({
     } finally {
       setLoading(false);
     }
-  }, [environment]);
+  }, [environment, projectId]);
 
   const loadRuntime = useCallback(async () => {
     setRuntimeLoading(true);
     try {
       const response = await apiRequest<RuntimeConfigResponse>(
-        `${API_URL}/configs/runtime?environment=${environment}`,
+        `${API_URL}/configs/runtime?environment=${environment}&projectId=${encodeURIComponent(projectId)}`,
       );
       setRuntimeSnapshot(response);
     } catch (requestError) {
@@ -100,7 +120,11 @@ export function ConfigConsole({
     } finally {
       setRuntimeLoading(false);
     }
-  }, [environment]);
+  }, [environment, projectId]);
+
+  useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
 
   useEffect(() => {
     void loadConfigs();
@@ -200,6 +224,7 @@ export function ConfigConsole({
           method: "POST",
           body: JSON.stringify({
             ...payload,
+            projectId,
             name: form.name,
             type: form.type,
             environment,
@@ -244,7 +269,12 @@ export function ConfigConsole({
       const body =
         action === "reject"
           ? JSON.stringify({ reason: rejectionReason.trim() || undefined })
-          : undefined;
+          : action === "submit"
+            ? JSON.stringify({
+                value: parseValue(form.value, form.type),
+                description: form.description,
+              })
+            : undefined;
       const response = await apiRequest<ConfigWorkflowResponse>(
         `${API_URL}/configs/${selected.id}/${action}`,
         { method: "POST", body },
@@ -313,6 +343,26 @@ export function ConfigConsole({
             <p className="eyebrow">OPSPILOT ADMIN</p>
             <h1>Service operations console</h1>
           </div>
+        </div>
+        <div className="environment-picker">
+          <label htmlFor="project">Project</label>
+          <select
+            id="project"
+            value={projectId}
+            onChange={(event) => {
+              setSelected(null);
+              setWorkflow(null);
+              setDiff(null);
+              setForm(initialForm);
+              setProjectId(event.target.value);
+            }}
+          >
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="environment-picker">
           <label htmlFor="environment">Environment</label>
@@ -401,7 +451,7 @@ export function ConfigConsole({
 
       <section className="hero-grid">
         <div className="hero-copy">
-          <p className="eyebrow accent">FLOWLINE SERVICE</p>
+          <p className="eyebrow accent">{data?.project.name?.toUpperCase() ?? "FLOWLINE PROJECT"}</p>
           <h2>Ship configuration changes with a review trail.</h2>
           <p className="hero-description">
             Draft a change, send it for approval, publish only reviewed values,
@@ -641,16 +691,13 @@ export function ConfigConsole({
 
             {selected && activeStatus === "DRAFT" && canEditDrafts && (
               <>
-                <button className="secondary-button" disabled={saving} type="submit">
-                  Save draft
-                </button>
                 <button
                   className="primary-button"
                   disabled={saving}
                   type="button"
                   onClick={() => void runWorkflowAction("submit")}
                 >
-                  Submit for approval
+                  {saving ? "Submitting…" : "Submit for approval"}
                 </button>
               </>
             )}
