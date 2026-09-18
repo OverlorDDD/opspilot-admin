@@ -120,7 +120,7 @@ export class ConfigsService {
     workspaceId: string,
     actorUserId: string,
   ): Promise<ContractConfigEntry> {
-    this.validateValue(request.type, request.value);
+    this.validateValue(request.type, request.value, request.name);
     const project = await this.getProject(workspaceId, request.projectId);
 
     try {
@@ -182,7 +182,11 @@ export class ConfigsService {
     }
   }
 
-  validateValue(type: ConfigKeyType, value: ConfigValue): void {
+  validateValue(
+    type: ConfigKeyType,
+    value: ConfigValue,
+    name?: string,
+  ): void {
     if (!CONFIG_KEY_TYPES.includes(type)) {
       throw new BadRequestException(`Unsupported config type '${type}'`);
     }
@@ -196,6 +200,30 @@ export class ConfigsService {
     if (!valid) {
       throw new BadRequestException(
         `Value does not match the '${type}' schema for this config key`,
+      );
+    }
+
+    if (
+      name === "limits.maxRetries" &&
+      (typeof value !== "number" ||
+        !Number.isInteger(value) ||
+        value < 0 ||
+        value > 10)
+    ) {
+      throw new BadRequestException(
+        "limits.maxRetries must be an integer between 0 and 10",
+      );
+    }
+
+    if (
+      name === "limits.maxTasksPerUser" &&
+      (typeof value !== "number" ||
+        !Number.isInteger(value) ||
+        value < 0 ||
+        value > 1000)
+    ) {
+      throw new BadRequestException(
+        "limits.maxTasksPerUser must be an integer between 0 and 1000",
       );
     }
   }
