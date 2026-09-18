@@ -39,7 +39,10 @@ function createService() {
   };
 
   const prisma = {
-    project: { findFirst: jest.fn().mockResolvedValue(project) },
+    project: {
+      findFirst: jest.fn().mockResolvedValue(project),
+      findMany: jest.fn().mockResolvedValue([project]),
+    },
     configEntry: {
       findMany: jest.fn().mockResolvedValue([
         makeEntry(),
@@ -95,13 +98,14 @@ describe("ConfigsService", () => {
   it("uses PostgreSQL on a cache miss, stores the snapshot, and excludes unpublished keys", async () => {
     const { service, runtimeCache } = createService();
 
-    const result = await service.getRuntime("staging");
+    const result = await service.getRuntime("staging", "flowline-service");
 
     expect(result.values["limits.maxTasksPerUser"]).toBe(25);
     expect(result.values["service.maintenanceMode"]).toBe(false);
     expect(result.values["notifications.weeklyDigest"]).toBeUndefined();
     expect(result.cache.status).toBe("MISS");
     expect(runtimeCache.write).toHaveBeenCalledWith(
+      "flowline-service",
       "staging",
       expect.objectContaining({
         environment: "staging",
@@ -122,7 +126,7 @@ describe("ConfigsService", () => {
       },
     });
 
-    const result = await service.getRuntime("staging");
+    const result = await service.getRuntime("staging", "flowline-service");
 
     expect(result.cache.status).toBe("HIT");
     expect(result.values["limits.maxTasksPerUser"]).toBe(25);
@@ -135,7 +139,7 @@ describe("ConfigsService", () => {
     runtimeCache.read.mockResolvedValue({ status: "BYPASS", value: null });
     runtimeCache.write.mockResolvedValue(false);
 
-    const result = await service.getRuntime("staging");
+    const result = await service.getRuntime("staging", "flowline-service");
 
     expect(result.cache.status).toBe("BYPASS");
     expect(result.values["limits.maxTasksPerUser"]).toBe(25);
@@ -154,6 +158,7 @@ describe("ConfigsService", () => {
 
     const created = await service.create(
       {
+        projectId: "flowline-service",
         environment: "staging",
         name: "limits.maxProjects",
         type: "number",
