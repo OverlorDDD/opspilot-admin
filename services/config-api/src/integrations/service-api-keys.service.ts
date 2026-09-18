@@ -50,6 +50,11 @@ export class ServiceApiKeysService {
     actorUserId: string;
   }): Promise<CreateServiceApiKeyResponse> {
     const project = await this.assertProject(input.workspaceId, input.projectId);
+    const name = input.name.trim();
+    if (!name) {
+      throw new NotFoundException("Service key name is required");
+    }
+
     const secret = `opk_${randomBytes(32).toString("base64url")}`;
     const keyHash = this.hash(secret);
     const keyPrefix = secret.slice(0, 12);
@@ -60,7 +65,7 @@ export class ServiceApiKeysService {
           workspaceId: input.workspaceId,
           projectId: input.projectId,
           environment: input.environment,
-          name: input.name.trim(),
+          name,
           keyPrefix,
           keyHash,
           scope: "runtime:read",
