@@ -71,6 +71,8 @@ export class ConfigsController {
   }
 
   @Get("runtime")
+  @UseGuards(JwtAuthGuard, WorkspaceRoleGuard)
+  @Roles("owner", "admin", "editor", "approver", "viewer")
   async runtime(
     @Query("environment") environment?: string,
     @Query("projectId") projectId?: string,
