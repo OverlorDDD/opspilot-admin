@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import type { RuntimeConfigResponse } from "@opspilot/contracts";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
-const PROJECT_ID = "flowline-customer-portal";
 
 export function CustomerPortalDemo() {
   const [runtime, setRuntime] = useState<RuntimeConfigResponse | null>(null);
@@ -17,7 +16,7 @@ export function CustomerPortalDemo() {
     setError(null);
     try {
       const response = await fetch(
-        `${API_URL}/configs/runtime?environment=staging&projectId=${PROJECT_ID}`,
+        `${API_URL}/demo/portal/runtime`,
         { cache: "no-store" },
       );
       const body = (await response.json()) as RuntimeConfigResponse & {
