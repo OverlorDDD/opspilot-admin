@@ -16,6 +16,7 @@ import type {
 } from "@opspilot/contracts";
 import { AccountSettings } from "./account-settings";
 import { TeamManagement } from "./team-management";
+import { ServiceKeyManagement } from "./service-key-management";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
 const environments: EnvironmentName[] = [
@@ -67,6 +68,7 @@ export function ConfigConsole({
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showTeam, setShowTeam] = useState(false);
+  const [showIntegrations, setShowIntegrations] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   const [diff, setDiff] = useState<ConfigRevisionDiffResponse | null>(null);
   const [diffFromVersion, setDiffFromVersion] = useState("");
@@ -408,16 +410,30 @@ export function ConfigConsole({
             Demo client
           </a>
           {["owner", "admin"].includes(workspace.role) && (
-            <button
-              className="logout-button"
-              type="button"
-              onClick={() => {
-                setShowTeam(!showTeam);
-                setShowSettings(false);
-              }}
-            >
-              Users
-            </button>
+            <>
+              <button
+                className="logout-button"
+                type="button"
+                onClick={() => {
+                  setShowIntegrations(!showIntegrations);
+                  setShowTeam(false);
+                  setShowSettings(false);
+                }}
+              >
+                Integrations
+              </button>
+              <button
+                className="logout-button"
+                type="button"
+                onClick={() => {
+                  setShowTeam(!showTeam);
+                  setShowIntegrations(false);
+                  setShowSettings(false);
+                }}
+              >
+                Users
+              </button>
+            </>
           )}
           <button
             className="logout-button"
@@ -425,6 +441,7 @@ export function ConfigConsole({
             onClick={() => {
               setShowSettings(!showSettings);
               setShowTeam(false);
+              setShowIntegrations(false);
             }}
           >
             Settings
@@ -452,6 +469,20 @@ export function ConfigConsole({
           currentUserId={user.id}
           workspace={workspace}
           onClose={() => setShowTeam(false)}
+        />
+      )}
+
+
+      {showIntegrations && (
+        <ServiceKeyManagement
+          projectId={projectId}
+          projectName={
+            projects.find((project) => project.id === projectId)?.name ??
+            data?.project.name ??
+            projectId
+          }
+          environment={environment}
+          onClose={() => setShowIntegrations(false)}
         />
       )}
 
