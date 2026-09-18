@@ -214,7 +214,10 @@ export class DispatchService {
         message,
         metadata: {
           maxRetries,
-          attempts,
+          attempts: attempts.map((attempt) => ({
+            number: attempt.number,
+            result: attempt.result,
+          })),
           simulatedFailuresBeforeSuccess: SYNC_FAILURES_BEFORE_SUCCESS,
         } as Prisma.InputJsonValue,
       },
