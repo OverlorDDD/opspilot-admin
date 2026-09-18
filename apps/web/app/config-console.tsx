@@ -24,6 +24,11 @@ const environments: EnvironmentName[] = [
   "production",
 ];
 
+const projectDemoRoutes: Record<string, string> = {
+  "flowline-service": "/demo",
+  "flowline-customer-portal": "/demo/portal",
+};
+
 type FormState = {
   name: string;
   type: ConfigKeyType;
@@ -75,8 +80,7 @@ export function ConfigConsole({
   const canPublish = ["owner", "admin"].includes(workspace.role);
   const activeStatus = workflow?.activeRevision?.status ?? null;
   const isDraftEditable = activeStatus === "DRAFT" && canEditDrafts;
-  const demoClientHref =
-    projectId === "flowline-customer-portal" ? "/demo/portal" : "/demo";
+  const demoClientHref = projectDemoRoutes[projectId] ?? "/demo";
 
   const loadProjects = useCallback(async () => {
     try {
