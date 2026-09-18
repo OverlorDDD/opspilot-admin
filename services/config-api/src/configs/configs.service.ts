@@ -60,7 +60,22 @@ export class ConfigsService {
     environment: EnvironmentName = "staging",
     projectId: string = DEFAULT_PROJECT_ID,
   ): Promise<RuntimeConfigResponse> {
-    const project = await this.getProject(DEFAULT_WORKSPACE_ID, projectId);
+    return this.getRuntimeForProject(projectId, environment);
+  }
+
+  async getRuntimeForProject(
+    projectId: string,
+    environment: EnvironmentName,
+  ): Promise<RuntimeConfigResponse> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, name: true },
+    });
+
+    if (!project) {
+      throw new NotFoundException("Project was not found");
+    }
+
     const cached = await this.runtimeCache.read(project.id, environment);
 
     if (cached.status === "HIT" && cached.value) {
