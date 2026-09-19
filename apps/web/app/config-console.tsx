@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type {
   ConfigEntry,
   ConfigKeyType,
@@ -76,6 +76,8 @@ export function ConfigConsole({
   const [diffLoading, setDiffLoading] = useState(false);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<RuntimeConfigResponse | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
+  const editorPanelRef = useRef<HTMLFormElement | null>(null);
+  const keyNameInputRef = useRef<HTMLInputElement | null>(null);
 
   const canEditDrafts = ["owner", "admin", "editor"].includes(workspace.role);
   const canReview = ["owner", "admin", "approver"].includes(workspace.role);
@@ -214,6 +216,14 @@ export function ConfigConsole({
     setDiff(null);
     setForm(initialForm);
     setError(null);
+
+    window.requestAnimationFrame(() => {
+      editorPanelRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      keyNameInputRef.current?.focus();
+    });
   }
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
@@ -597,7 +607,11 @@ export function ConfigConsole({
           )}
         </div>
 
-        <form className="panel editor-panel" onSubmit={handleSave}>
+        <form
+          ref={editorPanelRef}
+          className="panel editor-panel"
+          onSubmit={handleSave}
+        >
           <div className="panel-heading">
             <div>
               <p className="eyebrow">
@@ -613,6 +627,7 @@ export function ConfigConsole({
           <label className="field">
             <span>Key name</span>
             <input
+              ref={keyNameInputRef}
               required
               disabled={Boolean(selected) || !canEditDrafts}
               value={form.name}
