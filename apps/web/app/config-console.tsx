@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type {
   ConfigEntry,
   ConfigKeyType,
@@ -16,6 +16,7 @@ import type {
 } from "@opspilot/contracts";
 import { AccountSettings } from "./account-settings";
 import { TeamManagement } from "./team-management";
+import { ServiceKeyManagement } from "./service-key-management";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
 const environments: EnvironmentName[] = [
@@ -67,6 +68,7 @@ export function ConfigConsole({
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showTeam, setShowTeam] = useState(false);
+  const [showIntegrations, setShowIntegrations] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   const [diff, setDiff] = useState<ConfigRevisionDiffResponse | null>(null);
   const [diffFromVersion, setDiffFromVersion] = useState("");
@@ -74,6 +76,8 @@ export function ConfigConsole({
   const [diffLoading, setDiffLoading] = useState(false);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<RuntimeConfigResponse | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
+  const editorPanelRef = useRef<HTMLFormElement | null>(null);
+  const keyNameInputRef = useRef<HTMLInputElement | null>(null);
 
   const canEditDrafts = ["owner", "admin", "editor"].includes(workspace.role);
   const canReview = ["owner", "admin", "approver"].includes(workspace.role);
@@ -212,6 +216,14 @@ export function ConfigConsole({
     setDiff(null);
     setForm(initialForm);
     setError(null);
+
+    window.requestAnimationFrame(() => {
+      editorPanelRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      keyNameInputRef.current?.focus();
+    });
   }
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
@@ -408,16 +420,30 @@ export function ConfigConsole({
             Demo client
           </a>
           {["owner", "admin"].includes(workspace.role) && (
-            <button
-              className="logout-button"
-              type="button"
-              onClick={() => {
-                setShowTeam(!showTeam);
-                setShowSettings(false);
-              }}
-            >
-              Users
-            </button>
+            <>
+              <button
+                className="logout-button"
+                type="button"
+                onClick={() => {
+                  setShowIntegrations(!showIntegrations);
+                  setShowTeam(false);
+                  setShowSettings(false);
+                }}
+              >
+                Integrations
+              </button>
+              <button
+                className="logout-button"
+                type="button"
+                onClick={() => {
+                  setShowTeam(!showTeam);
+                  setShowIntegrations(false);
+                  setShowSettings(false);
+                }}
+              >
+                Users
+              </button>
+            </>
           )}
           <button
             className="logout-button"
@@ -425,6 +451,7 @@ export function ConfigConsole({
             onClick={() => {
               setShowSettings(!showSettings);
               setShowTeam(false);
+              setShowIntegrations(false);
             }}
           >
             Settings
@@ -452,6 +479,20 @@ export function ConfigConsole({
           currentUserId={user.id}
           workspace={workspace}
           onClose={() => setShowTeam(false)}
+        />
+      )}
+
+
+      {showIntegrations && (
+        <ServiceKeyManagement
+          projectId={projectId}
+          projectName={
+            projects.find((project) => project.id === projectId)?.name ??
+            data?.project.name ??
+            projectId
+          }
+          environment={environment}
+          onClose={() => setShowIntegrations(false)}
         />
       )}
 
@@ -566,7 +607,11 @@ export function ConfigConsole({
           )}
         </div>
 
-        <form className="panel editor-panel" onSubmit={handleSave}>
+        <form
+          ref={editorPanelRef}
+          className="panel editor-panel"
+          onSubmit={handleSave}
+        >
           <div className="panel-heading">
             <div>
               <p className="eyebrow">
@@ -582,6 +627,7 @@ export function ConfigConsole({
           <label className="field">
             <span>Key name</span>
             <input
+              ref={keyNameInputRef}
               required
               disabled={Boolean(selected) || !canEditDrafts}
               value={form.name}

@@ -12,7 +12,7 @@
     "predev": "npm run build --workspace=@opspilot/contracts && npm run db:generate --workspace=@opspilot/config-api",
     "dev": "concurrently --names api,web --prefix name \"npm run dev --workspace=@opspilot/config-api\" \"npm run dev --workspace=@opspilot/web\"",
     "prebuild": "npm run build --workspace=@opspilot/contracts && npm run db:generate --workspace=@opspilot/config-api",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present && npm run sdk:build",
     "db:generate": "npm run db:generate --workspace=@opspilot/config-api",
     "db:migrate": "npm run db:migrate --workspace=@opspilot/config-api",
     "db:migrate:init": "npm run db:migrate --workspace=@opspilot/config-api -- --name init",
@@ -23,10 +23,12 @@
     "db:studio": "npm run db:studio --workspace=@opspilot/config-api",
     "lint": "npm run lint --workspaces --if-present",
     "pretest": "npm run build --workspace=@opspilot/contracts && npm run db:generate --workspace=@opspilot/config-api",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present && npm run sdk:test",
     "test:ci": "npm run test:ci --workspaces --if-present",
     "db:deploy": "npm run db:deploy --workspace=@opspilot/config-api",
-    "verify": "npm test && npm run build"
+    "verify": "npm test && npm run build",
+    "sdk:build": "tsc -p sdk/node/tsconfig.json",
+    "sdk:test": "npm run sdk:build && node --test sdk/node/dist/index.test.js"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
