@@ -1,4 +1,5 @@
 import { UnauthorizedException } from "@nestjs/common";
+import { RedisCacheService } from "../cache/redis-cache.service";
 import { PrismaService } from "../database/prisma.service";
 import { ServiceApiKeysService } from "./service-api-keys.service";
 
@@ -41,9 +42,19 @@ function createService() {
     $transaction: jest.fn().mockImplementation(async (callback) => callback(tx)),
   };
 
+  const redis = {
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue(true),
+    delete: jest.fn().mockResolvedValue(true),
+  };
+
   return {
-    service: new ServiceApiKeysService(prisma as unknown as PrismaService),
+    service: new ServiceApiKeysService(
+      prisma as unknown as PrismaService,
+      redis as unknown as RedisCacheService,
+    ),
     prisma,
+    redis,
     tx,
   };
 }
@@ -70,7 +81,7 @@ describe("ServiceApiKeysService", () => {
   });
 
   it("authenticates an active key and updates lastUsedAt", async () => {
-    const { service, prisma } = createService();
+    const { service, prisma, redis } = createService();
 
     prisma.serviceApiKey.findUnique.mockResolvedValue({
       id: "key-1",
@@ -94,6 +105,34 @@ describe("ServiceApiKeysService", () => {
         data: { lastUsedAt: expect.any(Date) },
       }),
     );
+    expect(redis.set).toHaveBeenCalledWith(
+      expect.stringContaining("opspilot:service-key-auth:"),
+      expect.stringContaining('"projectId":"flowline-service"'),
+      60,
+    );
+  });
+
+  it("serves authentication from Redis without hitting PostgreSQL", async () => {
+    const { service, prisma, redis } = createService();
+
+    redis.get.mockResolvedValue(
+      JSON.stringify({
+        id: "key-1",
+        workspaceId: "flowline-workspace",
+        projectId: project.id,
+        projectName: project.name,
+        environment: "staging",
+        scope: "runtime:read",
+      }),
+    );
+
+    const context = await service.authenticate(
+      "opk_abcdefghijklmnopqrstuvwxyz123456",
+    );
+
+    expect(context.projectId).toBe(project.id);
+    expect(prisma.serviceApiKey.findUnique).not.toHaveBeenCalled();
+    expect(prisma.serviceApiKey.update).not.toHaveBeenCalled();
   });
 
   it("rejects a revoked service key", async () => {
