@@ -165,9 +165,9 @@ describe("ConfigsService", () => {
       {
         projectId: "flowline-service",
         environment: "staging",
-        name: "limits.maxProjects",
+        name: "limits.maxRetries",
         type: "number",
-        value: 12,
+        value: 4,
       },
       "flowline-workspace",
       "user-1",
@@ -185,6 +185,42 @@ describe("ConfigsService", () => {
       }),
     );
     expect(tx.auditLog.create).toHaveBeenCalled();
+  });
+
+  it("returns the supported parameter catalog for a project", async () => {
+    const { service } = createService();
+
+    const result = await service.listCatalog(
+      "flowline-workspace",
+      "flowline-service",
+    );
+
+    expect(result.items.map((item) => item.name)).toEqual(
+      expect.arrayContaining([
+        "limits.maxTasksPerUser",
+        "limits.maxRetries",
+        "service.maintenanceMode",
+        "notifications.weeklyDigest",
+      ]),
+    );
+  });
+
+  it("rejects a config key that the project consumer did not declare", async () => {
+    const { service } = createService();
+
+    await expect(
+      service.create(
+        {
+          projectId: "flowline-service",
+          environment: "staging",
+          name: "banana.speed",
+          type: "number",
+          value: 999,
+        },
+        "flowline-workspace",
+        "user-1",
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it("throws a not-found error for an unknown key", async () => {
