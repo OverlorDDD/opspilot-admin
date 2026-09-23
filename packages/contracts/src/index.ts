@@ -169,6 +169,18 @@ export interface ConfigListResponse {
   total: number;
 }
 
+export interface ConfigCatalogItem {
+  name: string;
+  type: ConfigKeyType;
+  defaultValue: ConfigValue;
+  description: string;
+}
+
+export interface ConfigCatalogResponse {
+  project: ProjectSummary;
+  items: ConfigCatalogItem[];
+}
+
 export type RuntimeCacheStatus = "HIT" | "MISS" | "BYPASS";
 
 export interface RuntimeConfigResponse {
