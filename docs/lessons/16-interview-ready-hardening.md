@@ -26,6 +26,26 @@ maxStaleMs: 24 * 60 * 60 * 1000
 
 Stale config не можна довіряти безкінечно. `maxStaleMs` задає максимальний вік fallback snapshot.
 
+## Service-key authentication cache
+
+До hardening service key перевірявся через PostgreSQL на кожний runtime request, а `lastUsedAt` оновлювався так само часто.
+
+Це означало, що Redis config cache не прибирав database load повністю.
+
+Тепер:
+
+```text
+raw service key
+→ SHA-256
+→ Redis auth cache
+   ├── HIT → context без PostgreSQL
+   └── MISS → PostgreSQL → lastUsedAt → Redis SET (60s)
+```
+
+Revoke інвалідовує auth-cache цього key.
+
+Тому при hot runtime traffic PostgreSQL не отримує authentication query на кожний request.
+
 ## Rate limiting
 
 Зовнішній runtime endpoint захищений лімітом запитів на service key.
