@@ -12,6 +12,7 @@ import {
   ServiceApiKeySummary,
 } from "@opspilot/contracts";
 import { createHash, randomBytes } from "node:crypto";
+import { RedisCacheService } from "../cache/redis-cache.service";
 import { PrismaService } from "../database/prisma.service";
 
 export interface ServiceApiKeyContext {
@@ -25,7 +26,12 @@ export interface ServiceApiKeyContext {
 
 @Injectable()
 export class ServiceApiKeysService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly authCacheTtlSeconds = 60;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisCacheService,
+  ) {}
 
   async list(
     workspaceId: string,
@@ -142,6 +148,8 @@ export class ServiceApiKeysService {
       return item;
     });
 
+    await this.redis.delete(this.authCacheKey(existing.keyHash));
+
     return this.toSummary(revoked);
   }
 
@@ -150,8 +158,20 @@ export class ServiceApiKeysService {
       throw new UnauthorizedException("Invalid service API key");
     }
 
+    const keyHash = this.hash(secret);
+    const cacheKey = this.authCacheKey(keyHash);
+    const cached = await this.redis.get(cacheKey);
+
+    if (cached) {
+      try {
+        return JSON.parse(cached) as ServiceApiKeyContext;
+      } catch {
+        await this.redis.delete(cacheKey);
+      }
+    }
+
     const item = await this.prisma.serviceApiKey.findUnique({
-      where: { keyHash: this.hash(secret) },
+      where: { keyHash },
       include: { project: { select: { name: true } } },
     });
 
@@ -164,7 +184,7 @@ export class ServiceApiKeysService {
       data: { lastUsedAt: new Date() },
     });
 
-    return {
+    const context: ServiceApiKeyContext = {
       id: item.id,
       workspaceId: item.workspaceId,
       projectId: item.projectId,
@@ -172,6 +192,14 @@ export class ServiceApiKeysService {
       environment: item.environment as EnvironmentName,
       scope: "runtime:read",
     };
+
+    await this.redis.set(
+      cacheKey,
+      JSON.stringify(context),
+      this.authCacheTtlSeconds,
+    );
+
+    return context;
   }
 
   private async assertProject(workspaceId: string, projectId: string) {
@@ -191,6 +219,10 @@ export class ServiceApiKeysService {
 
   private hash(secret: string): string {
     return createHash("sha256").update(secret).digest("hex");
+  }
+
+  private authCacheKey(keyHash: string): string {
+    return `opspilot:service-key-auth:${keyHash}`;
   }
 
   private toSummary(item: {
