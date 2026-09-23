@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import {
+  ConfigCatalogResponse,
   ConfigEntry,
   ConfigListResponse,
   ConfigRevisionDiffResponse,
@@ -53,6 +54,19 @@ export class ConfigsController {
     @Req() request: AuthenticatedRequest,
   ): Promise<ProjectListResponse> {
     return this.configsService.listProjects(request.workspace!.id);
+  }
+
+  @Get("catalog")
+  @UseGuards(JwtAuthGuard, WorkspaceRoleGuard)
+  @Roles("owner", "admin", "editor", "approver", "viewer")
+  async catalog(
+    @Req() request: AuthenticatedRequest,
+    @Query("projectId") projectId?: string,
+  ): Promise<ConfigCatalogResponse> {
+    return this.configsService.listCatalog(
+      request.workspace!.id,
+      projectId,
+    );
   }
 
   @Get()
