@@ -119,6 +119,27 @@ describe("ConfigsService", () => {
     );
   });
 
+  it("filters legacy runtime keys that are not declared by the project catalog", async () => {
+    const { service, runtimeCache } = createService();
+    runtimeCache.read.mockResolvedValue({
+      status: "HIT",
+      value: {
+        project,
+        environment: "staging",
+        values: {
+          "limits.maxRetries": 3,
+          Greetings: "Hello, World!",
+        },
+        generatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+
+    const result = await service.getRuntime("staging", "flowline-service");
+
+    expect(result.values["limits.maxRetries"]).toBe(3);
+    expect(result.values.Greetings).toBeUndefined();
+  });
+
   it("returns a Redis cache hit without querying PostgreSQL", async () => {
     const { service, prisma, runtimeCache } = createService();
     runtimeCache.read.mockResolvedValue({
