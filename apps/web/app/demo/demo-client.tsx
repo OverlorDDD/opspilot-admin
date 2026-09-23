@@ -177,7 +177,7 @@ export function DemoClient() {
           <div className="dispatch-header-actions">
             <div className={`dispatch-runtime-pill ${runtime?.cache.status?.toLowerCase() ?? "loading"}`}>
               <span />
-              Runtime {runtime?.cache.status ?? (loading ? "LOADING" : "—")}
+              Runtime {runtime?.environment?.toUpperCase() ?? "—"} · {runtime?.cache.status ?? (loading ? "LOADING" : "—")}
             </div>
             <button disabled={loading} type="button" onClick={() => void loadState()}>
               {loading ? "Refreshing…" : "Refresh config"}
