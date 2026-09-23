@@ -43,6 +43,7 @@ consumer backend / @opspilot/node SDK
 - multiple Projects inside one Workspace;
 - development, staging and production environments;
 - typed configuration values: number, boolean, string and JSON;
+- project-specific supported-parameter catalog, so operators cannot publish keys the consumer application does not declare;
 - Draft → Pending Approval → Approved → Published workflow;
 - Reject with an optional reason;
 - immutable revision history;
