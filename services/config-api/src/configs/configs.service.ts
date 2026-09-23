@@ -63,8 +63,15 @@ export class ConfigsService {
     projectId?: string,
   ): Promise<ConfigListResponse> {
     const project = await this.getProject(workspaceId, projectId);
+    const supportedNames = getProjectConfigCatalog(project.id).map(
+      (item) => item.name,
+    );
     const entries = await this.prisma.configEntry.findMany({
-      where: { projectId: project.id, environment },
+      where: {
+        projectId: project.id,
+        environment,
+        name: { in: supportedNames },
+      },
       orderBy: { name: "asc" },
     });
 
@@ -106,6 +113,7 @@ export class ConfigsService {
     if (cached.status === "HIT" && cached.value) {
       return {
         ...cached.value,
+        values: this.filterSupportedValues(project.id, cached.value.values),
         cache: {
           status: "HIT",
           ttlSeconds: this.runtimeCache.ttlSeconds,
@@ -113,8 +121,16 @@ export class ConfigsService {
       };
     }
 
+    const supportedNames = getProjectConfigCatalog(project.id).map(
+      (item) => item.name,
+    );
     const entries = await this.prisma.configEntry.findMany({
-      where: { projectId: project.id, environment, isPublished: true },
+      where: {
+        projectId: project.id,
+        environment,
+        isPublished: true,
+        name: { in: supportedNames },
+      },
       orderBy: { name: "asc" },
     });
 
@@ -280,6 +296,19 @@ export class ConfigsService {
         "limits.maxTasksPerUser must be an integer between 0 and 1000",
       );
     }
+  }
+
+  private filterSupportedValues(
+    projectId: string,
+    values: Record<string, ConfigValue>,
+  ): Record<string, ConfigValue> {
+    const supported = new Set(
+      getProjectConfigCatalog(projectId).map((item) => item.name),
+    );
+
+    return Object.fromEntries(
+      Object.entries(values).filter(([name]) => supported.has(name)),
+    );
   }
 
   private async getProject(
