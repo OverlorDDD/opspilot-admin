@@ -28,7 +28,8 @@
     "db:deploy": "npm run db:deploy --workspace=@opspilot/config-api",
     "verify": "npm test && npm run build",
     "sdk:build": "tsc -p sdk/node/tsconfig.json",
-    "sdk:test": "npm run sdk:build && node --test sdk/node/dist/index.test.js"
+    "sdk:test": "npm run sdk:build && node --test sdk/node/dist/index.test.js",
+    "loadtest:runtime": "node scripts/load-test-runtime.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
