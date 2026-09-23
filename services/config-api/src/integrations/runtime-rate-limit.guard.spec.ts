@@ -1,4 +1,4 @@
-import { TooManyRequestsException } from "@nestjs/common";
+import { HttpException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { ExecutionContext } from "@nestjs/common";
 import { RedisCacheService } from "../cache/redis-cache.service";
@@ -46,7 +46,9 @@ describe("RuntimeRateLimitGuard", () => {
 
     await expect(
       guard.canActivate(contextWithServiceKey()),
-    ).rejects.toBeInstanceOf(TooManyRequestsException);
+    ).rejects.toMatchObject({
+      status: 429,
+    } satisfies Partial<HttpException>);
   });
 
   it("fails open when Redis is degraded", async () => {
