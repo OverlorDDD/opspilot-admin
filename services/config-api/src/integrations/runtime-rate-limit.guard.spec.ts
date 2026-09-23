@@ -1,4 +1,3 @@
-import { HttpException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { ExecutionContext } from "@nestjs/common";
 import { RedisCacheService } from "../cache/redis-cache.service";
@@ -48,7 +47,7 @@ describe("RuntimeRateLimitGuard", () => {
       guard.canActivate(contextWithServiceKey()),
     ).rejects.toMatchObject({
       status: 429,
-    } satisfies Partial<HttpException>);
+    });
   });
 
   it("fails open when Redis is degraded", async () => {
