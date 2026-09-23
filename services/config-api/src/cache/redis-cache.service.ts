@@ -88,6 +88,26 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async incrementWindow(
+    key: string,
+    ttlSeconds: number,
+  ): Promise<number | null> {
+    if (!this.client.isReady) return null;
+
+    try {
+      const count = await this.client.incr(key);
+      if (count === 1) {
+        await this.client.expire(key, ttlSeconds);
+      }
+      return count;
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Redis INCR failed for '${key}': ${this.errorMessage(error)}`,
+      );
+      return null;
+    }
+  }
+
   private errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
   }
