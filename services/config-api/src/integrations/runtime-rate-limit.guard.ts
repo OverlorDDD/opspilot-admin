@@ -1,8 +1,9 @@
 import {
   CanActivate,
   ExecutionContext,
+  HttpException,
+  HttpStatus,
   Injectable,
-  TooManyRequestsException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { RedisCacheService } from "../cache/redis-cache.service";
@@ -46,8 +47,9 @@ export class RuntimeRateLimitGuard implements CanActivate {
     }
 
     if (count > this.limitPerMinute) {
-      throw new TooManyRequestsException(
+      throw new HttpException(
         `Runtime API rate limit exceeded (${this.limitPerMinute} requests/minute)`,
+        HttpStatus.TOO_MANY_REQUESTS,
       );
     }
 
