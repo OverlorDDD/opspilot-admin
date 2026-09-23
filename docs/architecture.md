@@ -6,6 +6,7 @@ OpsPilot is the **control plane**. It owns governance around operational configu
 
 - authentication and RBAC;
 - Projects and Environments;
+- each Project's supported runtime-parameter catalog;
 - Draft / Approval / Publish;
 - revision history and rollback;
 - audit trail;
@@ -32,7 +33,7 @@ Browser
 → PostgreSQL
 ```
 
-The Guard answers authorization questions such as "may an editor submit this change?". The Service applies business rules such as "is this proposed value valid?".
+The Guard answers authorization questions such as "may an editor submit this change?". The Service applies business rules such as "is this proposed value valid?". New configuration keys must also exist in the active Project's supported-parameter catalog; this prevents operational data that the consumer application never reads.
 
 ### Publish
 
