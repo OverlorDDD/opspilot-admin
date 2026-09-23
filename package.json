@@ -30,7 +30,8 @@
     "sdk:build": "tsc -p sdk/node/tsconfig.json",
     "sdk:test": "npm run sdk:build && node --test sdk/node/dist/index.test.js",
     "loadtest:runtime": "node scripts/load-test-runtime.mjs",
-    "verify:prepare": "npm run build --workspace=@opspilot/contracts && npm run db:generate --workspace=@opspilot/config-api"
+    "verify:prepare": "npm run build --workspace=@opspilot/contracts && npm run db:generate --workspace=@opspilot/config-api",
+    "dev:run": "concurrently --names api,web --prefix name \"npm run dev --workspace=@opspilot/config-api\" \"npm run dev --workspace=@opspilot/web\""
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
