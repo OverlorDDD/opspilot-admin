@@ -57,7 +57,9 @@ Customer backend
 → GET /api/runtime/v1/config
 → ServiceApiKeyGuard
 → SHA-256(candidate secret)
-→ PostgreSQL service-key lookup
+→ Redis auth-context cache
+   ├── HIT → authenticated context
+   └── MISS → PostgreSQL key lookup + lastUsedAt → Redis SET
 → RuntimeRateLimitGuard
 → ConfigsService
 → Redis cache
@@ -76,7 +78,8 @@ PostgreSQL is required for the control plane.
 
 Redis is an optimization and protection layer:
 
-- runtime cache;
+- runtime configuration cache;
+- short-lived service-key authentication context cache;
 - fixed-window runtime rate-limit counters.
 
 If Redis is unavailable:
