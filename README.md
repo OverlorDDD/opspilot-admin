@@ -91,6 +91,7 @@ The active Project in OpsPilot opens the matching demo product.
 - key prefix, `lastUsedAt` and revocation state are stored;
 - consumer endpoint: `GET /api/runtime/v1/config`;
 - authenticated consumer cannot choose another Project/Environment through query parameters;
+- short-lived Redis cache for service-key authentication, so the hot runtime path does not query PostgreSQL on every request;
 - per-service-key runtime rate limiting backed by Redis.
 
 ### Node.js SDK
