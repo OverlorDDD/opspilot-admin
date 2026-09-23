@@ -7,6 +7,7 @@ import {
 import { Prisma } from "@prisma/client";
 import {
   CONFIG_KEY_TYPES,
+  ConfigCatalogResponse,
   ConfigEntry as ContractConfigEntry,
   ConfigKeyType,
   ConfigListResponse,
@@ -20,6 +21,10 @@ import {
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../database/prisma.service";
 import { RuntimeConfigCacheService } from "../cache/runtime-config-cache.service";
+import {
+  findProjectConfigDefinition,
+  getProjectConfigCatalog,
+} from "./config-catalog";
 
 const DEFAULT_WORKSPACE_ID = "flowline-workspace";
 const DEFAULT_PROJECT_ID = "flowline-service";
@@ -39,6 +44,17 @@ export class ConfigsService {
     });
 
     return { items: projects };
+  }
+
+  async listCatalog(
+    workspaceId: string,
+    projectId?: string,
+  ): Promise<ConfigCatalogResponse> {
+    const project = await this.getProject(workspaceId, projectId);
+    return {
+      project,
+      items: getProjectConfigCatalog(project.id),
+    };
   }
 
   async list(
@@ -144,8 +160,22 @@ export class ConfigsService {
     workspaceId: string,
     actorUserId: string,
   ): Promise<ContractConfigEntry> {
-    this.validateValue(request.type, request.value, request.name);
     const project = await this.getProject(workspaceId, request.projectId);
+    const definition = findProjectConfigDefinition(project.id, request.name);
+
+    if (!definition) {
+      throw new BadRequestException(
+        `Config key '${request.name}' is not declared by project '${project.name}'`,
+      );
+    }
+
+    if (definition.type !== request.type) {
+      throw new BadRequestException(
+        `Config key '${request.name}' must use type '${definition.type}'`,
+      );
+    }
+
+    this.validateValue(request.type, request.value, request.name);
 
     try {
       const entry = await this.prisma.$transaction(async (tx) => {
