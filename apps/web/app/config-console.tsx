@@ -2,6 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type {
+  ConfigCatalogItem,
+  ConfigCatalogResponse,
   ConfigEntry,
   ConfigKeyType,
   ConfigListResponse,
@@ -58,6 +60,7 @@ export function ConfigConsole({
   const [environment, setEnvironment] = useState<EnvironmentName>("staging");
   const [projectId, setProjectId] = useState("flowline-service");
   const [projects, setProjects] = useState<ProjectListResponse["items"]>([]);
+  const [catalog, setCatalog] = useState<ConfigCatalogItem[]>([]);
   const [data, setData] = useState<ConfigListResponse | null>(null);
   const [selected, setSelected] = useState<ConfigEntry | null>(null);
   const [workflow, setWorkflow] = useState<ConfigWorkflowResponse | null>(null);
@@ -77,7 +80,7 @@ export function ConfigConsole({
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<RuntimeConfigResponse | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
   const editorPanelRef = useRef<HTMLFormElement | null>(null);
-  const keyNameInputRef = useRef<HTMLInputElement | null>(null);
+  const supportedKeySelectRef = useRef<HTMLSelectElement | null>(null);
 
   const canEditDrafts = ["owner", "admin", "editor"].includes(workspace.role);
   const canReview = ["owner", "admin", "approver"].includes(workspace.role);
@@ -85,6 +88,10 @@ export function ConfigConsole({
   const activeStatus = workflow?.activeRevision?.status ?? null;
   const isDraftEditable = activeStatus === "DRAFT" && canEditDrafts;
   const demoClientHref = projectDemoRoutes[projectId] ?? "/demo";
+  const availableCatalogItems = catalog.filter(
+    (definition) =>
+      !data?.items.some((entry) => entry.name === definition.name),
+  );
 
   const loadProjects = useCallback(async () => {
     try {
@@ -98,6 +105,17 @@ export function ConfigConsole({
       ) {
         setProjectId(response.items[0].id);
       }
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    }
+  }, [projectId]);
+
+  const loadCatalog = useCallback(async () => {
+    try {
+      const response = await apiRequest<ConfigCatalogResponse>(
+        `${API_URL}/configs/catalog?projectId=${encodeURIComponent(projectId)}`,
+      );
+      setCatalog(response.items);
     } catch (requestError) {
       setError(errorMessage(requestError));
     }
@@ -137,9 +155,10 @@ export function ConfigConsole({
   }, [loadProjects]);
 
   useEffect(() => {
+    void loadCatalog();
     void loadConfigs();
     void loadRuntime();
-  }, [loadConfigs, loadRuntime]);
+  }, [loadCatalog, loadConfigs, loadRuntime]);
 
   async function loadWorkflow(entry: ConfigEntry) {
     setWorkflowLoading(true);
@@ -211,10 +230,19 @@ export function ConfigConsole({
   }
 
   function startNewKey() {
+    const firstAvailable = availableCatalogItems[0];
+
+    if (!firstAvailable) {
+      setError(
+        "All parameters supported by this project already exist in the selected environment.",
+      );
+      return;
+    }
+
     setSelected(null);
     setWorkflow(null);
     setDiff(null);
-    setForm(initialForm);
+    applyCatalogDefinition(firstAvailable);
     setError(null);
 
     window.requestAnimationFrame(() => {
@@ -222,7 +250,16 @@ export function ConfigConsole({
         behavior: "smooth",
         block: "start",
       });
-      keyNameInputRef.current?.focus();
+      supportedKeySelectRef.current?.focus();
+    });
+  }
+
+  function applyCatalogDefinition(definition: ConfigCatalogItem) {
+    setForm({
+      name: definition.name,
+      type: definition.type,
+      value: stringifyValue(definition.defaultValue),
+      description: definition.description,
     });
   }
 
@@ -571,11 +608,18 @@ export function ConfigConsole({
             </div>
             <button
               className="secondary-button"
-              disabled={!canEditDrafts}
+              disabled={!canEditDrafts || availableCatalogItems.length === 0}
+              title={
+                availableCatalogItems.length === 0
+                  ? "All supported parameters already exist in this environment."
+                  : "Add a parameter declared by this project."
+              }
               type="button"
               onClick={startNewKey}
             >
-              + New key
+              {availableCatalogItems.length > 0
+                ? "+ Add supported key"
+                : "All supported keys added"}
             </button>
           </div>
 
@@ -624,38 +668,48 @@ export function ConfigConsole({
             </span>
           </div>
 
-          <label className="field">
-            <span>Key name</span>
-            <input
-              ref={keyNameInputRef}
-              required
-              disabled={Boolean(selected) || !canEditDrafts}
-              value={form.name}
-              onChange={(event) => setForm({ ...form, name: event.target.value })}
-              placeholder="car.maxSpeed"
-            />
-          </label>
+          {selected ? (
+            <>
+              <label className="field">
+                <span>Key name</span>
+                <input disabled value={form.name} />
+              </label>
 
-          <label className="field">
-            <span>Type</span>
-            <select
-              disabled={Boolean(selected) || !canEditDrafts}
-              value={form.type}
-              onChange={(event) => {
-                const nextType = event.target.value as ConfigKeyType;
-                setForm({
-                  ...form,
-                  type: nextType,
-                  value: nextType === "boolean" ? "false" : "",
-                });
-              }}
-            >
-              <option value="number">number</option>
-              <option value="boolean">boolean</option>
-              <option value="string">string</option>
-              <option value="json">json</option>
-            </select>
-          </label>
+              <label className="field">
+                <span>Type</span>
+                <input disabled value={form.type} />
+              </label>
+            </>
+          ) : (
+            <>
+              <label className="field">
+                <span>Supported parameter</span>
+                <select
+                  ref={supportedKeySelectRef}
+                  required
+                  disabled={!canEditDrafts || availableCatalogItems.length === 0}
+                  value={form.name}
+                  onChange={(event) => {
+                    const definition = availableCatalogItems.find(
+                      (item) => item.name === event.target.value,
+                    );
+                    if (definition) applyCatalogDefinition(definition);
+                  }}
+                >
+                  {availableCatalogItems.map((definition) => (
+                    <option key={definition.name} value={definition.name}>
+                      {definition.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                <span>Type</span>
+                <input disabled value={form.type} />
+              </label>
+            </>
+          )}
 
           <div className="field">
             <span>{selected && !isDraftEditable ? "Current / proposed value" : "Value"}</span>

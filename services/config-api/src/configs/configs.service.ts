@@ -7,6 +7,7 @@ import {
 import { Prisma } from "@prisma/client";
 import {
   CONFIG_KEY_TYPES,
+  ConfigCatalogResponse,
   ConfigEntry as ContractConfigEntry,
   ConfigKeyType,
   ConfigListResponse,
@@ -20,6 +21,10 @@ import {
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../database/prisma.service";
 import { RuntimeConfigCacheService } from "../cache/runtime-config-cache.service";
+import {
+  findProjectConfigDefinition,
+  getProjectConfigCatalog,
+} from "./config-catalog";
 
 const DEFAULT_WORKSPACE_ID = "flowline-workspace";
 const DEFAULT_PROJECT_ID = "flowline-service";
@@ -41,14 +46,32 @@ export class ConfigsService {
     return { items: projects };
   }
 
+  async listCatalog(
+    workspaceId: string,
+    projectId?: string,
+  ): Promise<ConfigCatalogResponse> {
+    const project = await this.getProject(workspaceId, projectId);
+    return {
+      project,
+      items: getProjectConfigCatalog(project.id),
+    };
+  }
+
   async list(
     environment: EnvironmentName = "staging",
     workspaceId: string = DEFAULT_WORKSPACE_ID,
     projectId?: string,
   ): Promise<ConfigListResponse> {
     const project = await this.getProject(workspaceId, projectId);
+    const supportedNames = getProjectConfigCatalog(project.id).map(
+      (item) => item.name,
+    );
     const entries = await this.prisma.configEntry.findMany({
-      where: { projectId: project.id, environment },
+      where: {
+        projectId: project.id,
+        environment,
+        name: { in: supportedNames },
+      },
       orderBy: { name: "asc" },
     });
 
@@ -90,6 +113,7 @@ export class ConfigsService {
     if (cached.status === "HIT" && cached.value) {
       return {
         ...cached.value,
+        values: this.filterSupportedValues(project.id, cached.value.values),
         cache: {
           status: "HIT",
           ttlSeconds: this.runtimeCache.ttlSeconds,
@@ -97,8 +121,16 @@ export class ConfigsService {
       };
     }
 
+    const supportedNames = getProjectConfigCatalog(project.id).map(
+      (item) => item.name,
+    );
     const entries = await this.prisma.configEntry.findMany({
-      where: { projectId: project.id, environment, isPublished: true },
+      where: {
+        projectId: project.id,
+        environment,
+        isPublished: true,
+        name: { in: supportedNames },
+      },
       orderBy: { name: "asc" },
     });
 
@@ -144,8 +176,22 @@ export class ConfigsService {
     workspaceId: string,
     actorUserId: string,
   ): Promise<ContractConfigEntry> {
-    this.validateValue(request.type, request.value, request.name);
     const project = await this.getProject(workspaceId, request.projectId);
+    const definition = findProjectConfigDefinition(project.id, request.name);
+
+    if (!definition) {
+      throw new BadRequestException(
+        `Config key '${request.name}' is not declared by project '${project.name}'`,
+      );
+    }
+
+    if (definition.type !== request.type) {
+      throw new BadRequestException(
+        `Config key '${request.name}' must use type '${definition.type}'`,
+      );
+    }
+
+    this.validateValue(request.type, request.value, request.name);
 
     try {
       const entry = await this.prisma.$transaction(async (tx) => {
@@ -250,6 +296,19 @@ export class ConfigsService {
         "limits.maxTasksPerUser must be an integer between 0 and 1000",
       );
     }
+  }
+
+  private filterSupportedValues(
+    projectId: string,
+    values: Record<string, ConfigValue>,
+  ): Record<string, ConfigValue> {
+    const supported = new Set(
+      getProjectConfigCatalog(projectId).map((item) => item.name),
+    );
+
+    return Object.fromEntries(
+      Object.entries(values).filter(([name]) => supported.has(name)),
+    );
   }
 
   private async getProject(

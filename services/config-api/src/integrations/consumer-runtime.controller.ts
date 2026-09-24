@@ -5,13 +5,14 @@ import {
   ServiceApiKeyGuard,
   ServiceAuthenticatedRequest,
 } from "./service-api-key.guard";
+import { RuntimeRateLimitGuard } from "./runtime-rate-limit.guard";
 
 @Controller("runtime/v1")
 export class ConsumerRuntimeController {
   constructor(private readonly configs: ConfigsService) {}
 
   @Get("config")
-  @UseGuards(ServiceApiKeyGuard)
+  @UseGuards(ServiceApiKeyGuard, RuntimeRateLimitGuard)
   getConfig(
     @Req() request: ServiceAuthenticatedRequest,
   ): Promise<RuntimeConfigResponse> {

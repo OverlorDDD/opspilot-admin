@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { OpsPilotClient } from "./index";
 
@@ -61,6 +64,7 @@ test("returns the last snapshot as stale when refresh fails", async () => {
       baseUrl: "https://opspilot.example",
       apiKey: "opk_test_secret",
       refreshIntervalMs: 1_000,
+      maxStaleMs: 60_000,
     });
 
     await client.refresh();
@@ -71,5 +75,45 @@ test("returns the last snapshot as stale when refresh fails", async () => {
     assert.equal(fallback.values["payment.maxRetries"], 3);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("loads a persisted snapshot after the consumer process restarts", async () => {
+  const originalFetch = globalThis.fetch;
+  const directory = mkdtempSync(join(tmpdir(), "opspilot-sdk-"));
+  const snapshotFile = join(directory, "runtime.json");
+
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify(runtime), { status: 200 });
+
+  try {
+    const firstProcess = new OpsPilotClient({
+      baseUrl: "https://opspilot.example",
+      apiKey: "opk_test_secret",
+      refreshIntervalMs: 60_000,
+      snapshotFile,
+    });
+
+    await firstProcess.refresh();
+
+    globalThis.fetch = async () => {
+      throw new Error("OpsPilot unavailable");
+    };
+
+    const restartedProcess = new OpsPilotClient({
+      baseUrl: "https://opspilot.example",
+      apiKey: "opk_test_secret",
+      refreshIntervalMs: 60_000,
+      snapshotFile,
+      maxStaleMs: 60_000,
+    });
+
+    const snapshot = await restartedProcess.getConfig();
+
+    assert.equal(snapshot.sdk.source, "disk");
+    assert.equal(snapshot.values["payment.maxRetries"], 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+    rmSync(directory, { recursive: true, force: true });
   }
 });

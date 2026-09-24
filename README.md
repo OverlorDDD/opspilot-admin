@@ -1,159 +1,220 @@
 # OpsPilot Admin
 
-OpsPilot Admin — production-oriented web admin panel for a fictional B2B SaaS company, Flowline. The panel lets an operations team change service parameters safely without editing code or deploying a new backend version.
+OpsPilot Admin is a portfolio B2B control plane for managing runtime configuration across multiple products and environments without changing the consumer application's source code for every operational adjustment.
+
+The project is intentionally built as a production-oriented full-stack system rather than a static CRUD demo.
 
 ## Business problem
 
-Flowline has operational settings such as task limits, feature availability, maintenance mode and notification behavior. Developers should not need to change a source file or run SQL for every business adjustment. At the same time, unrestricted edits are dangerous.
+A company can have several products such as Dispatch, Customer Portal, Billing and Support. Each product may need operational parameters such as task limits, feature availability, retry policies and maintenance mode.
 
-OpsPilot provides a controlled workflow: authenticated workspace → parameter edit → validation → draft → approval → publish → audit → rollback.
+Building a separate admin panel, RBAC model, approval workflow, audit history and rollback system inside every product duplicates security and business logic.
 
-This is a web-only product. It does not depend on Unity, game development or C#.
+OpsPilot centralizes that governance:
 
-## First release
+```text
+Workspace (company)
+├── Project: Flowline Dispatch
+└── Project: Flowline Customer Portal
+        │
+        ↓
+Draft → Submit → Approve → Publish
+        │
+        ↓
+published runtime configuration
+        │
+        ↓
+consumer backend / @opspilot/node SDK
+```
 
-- registration and login;
-- personal profile and account settings;
-- workspace and role-based access;
-- operational parameter registry;
-- typed values: number, boolean, string and JSON;
-- draft/publish workflow;
-- validation, diff and rollback;
-- feature flags and maintenance mode;
-- notification/content settings;
-- audit log;
-- public runtime-config endpoint consumed by a demo web service;
-- tests, Docker Compose, CI/CD and AWS deployment through Terraform.
+## Implemented features
+
+### Identity and access
+
+- registration, login and logout;
+- JWT authentication stored in an httpOnly cookie;
+- workspace-scoped RBAC;
+- roles: `owner`, `admin`, `editor`, `approver`, `viewer`;
+- user management restricted to owner/admin;
+- workspace-scoped member listing for tenant isolation.
+
+### Configuration workflow
+
+- multiple Projects inside one Workspace;
+- development, staging and production environments;
+- typed configuration values: number, boolean, string and JSON;
+- project-specific supported-parameter catalog, so operators cannot publish keys the consumer application does not declare;
+- Draft → Pending Approval → Approved → Published workflow;
+- Reject with an optional reason;
+- immutable revision history;
+- diff between versions;
+- rollback implemented as "restore as new draft";
+- append-only audit events;
+- Prisma transactions around workflow state changes.
+
+### Runtime configuration
+
+- PostgreSQL is the source of truth;
+- Redis cache-aside runtime reads;
+- TTL-based runtime cache;
+- publish-time cache invalidation;
+- PostgreSQL fallback when Redis is degraded;
+- runtime cache keys are scoped by Project + Environment.
+
+### Demo products
+
+**Flowline Dispatch**
+
+- persistent tasks stored in PostgreSQL;
+- task creation and completion;
+- persistent backend activity history;
+- maintenance mode enforced on the backend;
+- task capacity enforced by `limits.maxTasksPerUser`;
+- digest availability controlled by `notifications.weeklyDigest`;
+- carrier retry behavior controlled by `limits.maxRetries`.
+
+**Flowline Customer Portal**
+
+- self-service returns feature flag;
+- support-ticket limit policy;
+- maintenance mode;
+- separate runtime configuration from Dispatch.
+
+The active Project in OpsPilot opens the matching demo product.
+
+### External consumer integration
+
+- machine-to-machine service API keys;
+- keys are bound to one Project + Environment;
+- `runtime:read` least-privilege scope;
+- raw service secret is shown only once;
+- only a SHA-256 lookup hash is stored in PostgreSQL;
+- key prefix, `lastUsedAt` and revocation state are stored;
+- consumer endpoint: `GET /api/runtime/v1/config`;
+- authenticated consumer cannot choose another Project/Environment through query parameters;
+- short-lived Redis cache for service-key authentication, so the hot runtime path does not query PostgreSQL on every request;
+- per-service-key runtime rate limiting backed by Redis.
+
+### Node.js SDK
+
+A small publishable-style package is included in `sdk/node`.
+
+It supports:
+
+- authenticated runtime fetch;
+- in-memory cache;
+- polling;
+- request timeout;
+- stale-on-error fallback;
+- optional persistent local snapshot;
+- recovery from an OpsPilot outage even after the consumer process restarts;
+- maximum stale age through `maxStaleMs`.
+
+The SDK is part of this repository and is not currently published to npm.
+
+### Operations and observability
+
+- Dockerfiles for Next.js and NestJS;
+- development and production-like Docker Compose;
+- PostgreSQL and Redis health checks;
+- API liveness: `GET /api/health/live`;
+- API readiness: `GET /api/health/ready`;
+- request IDs returned as `x-request-id`;
+- structured HTTP access logs with method, path, status and duration;
+- configurable CORS and secure-cookie behavior;
+- runtime API rate limiting;
+- local runtime endpoint load-test script.
+
+### Delivery
+
+GitHub Actions CI runs:
+
+```text
+npm ci
+↓
+unit tests
+↓
+SDK tests
+↓
+Next.js production build
+↓
+NestJS production build
+↓
+Docker API image build
+↓
+Docker web image build
+```
+
+Dependabot and a Pull Request template are also included.
 
 ## Technology
 
 | Layer | Technology | Responsibility |
 |---|---|---|
-| Admin UI | Next.js, React, TypeScript | dashboard, forms, settings and access states |
-| API | Nest.js, TypeScript | auth, RBAC and domain API |
-| Data | PostgreSQL, Prisma | users, workspaces, versions and audit |
-| Cache | Redis | fast reads and short-lived session/rate-limit data |
-| Events | SNS/SQS-compatible flow | asynchronous audit/telemetry work |
-| Runtime | Docker | reproducible local and cloud processes |
-| Cloud | AWS ECS/Fargate, RDS, S3, CloudWatch | public deployment |
-| IaC | Terraform | versioned infrastructure |
-| Delivery | GitHub Actions | quality gates and deployment |
+| Frontend | Next.js 15, React 19, TypeScript | Admin UI and demo products |
+| Backend | Node.js, NestJS, TypeScript | REST API, auth, RBAC and domain rules |
+| Database | PostgreSQL, Prisma | Persistent domain data, revisions and audit |
+| Cache | Redis | Runtime cache and rate-limit counters |
+| Auth | JWT cookie + service API keys | User and machine authentication |
+| SDK | TypeScript / Node.js | External runtime consumer integration |
+| Runtime | Docker / Docker Compose | Reproducible local and production-like runtime |
+| CI | GitHub Actions | Tests, builds and Docker quality gates |
 
-## Development approach
+## Architecture
 
-We build small vertical slices. Each slice includes domain rules, backend endpoint, UI state, tests and an explanation in `docs/lessons`. This keeps the product understandable while building the engineering habits expected from a middle developer.
+```text
+                     ┌───────────────────────┐
+                     │     OpsPilot UI       │
+                     │   Next.js / React     │
+                     └──────────┬────────────┘
+                                │ /api
+                                ▼
+                     ┌───────────────────────┐
+                     │      NestJS API       │
+                     │ JWT / RBAC / Guards   │
+                     │ Services / Validation │
+                     └───────┬───────┬───────┘
+                             │       │
+                         Prisma      │ runtime cache
+                             │       ▼
+                             │   ┌─────────┐
+                             │   │  Redis  │
+                             │   └─────────┘
+                             ▼
+                      ┌────────────┐
+                      │ PostgreSQL │
+                      └────────────┘
 
-## Current status
+External customer backend
+        │
+        │ Bearer opk_...
+        ▼
+GET /api/runtime/v1/config
+        │
+        ▼
+@opspilot/node
+        │
+        ├── memory snapshot
+        └── optional disk snapshot
+```
 
-The monorepo, Nest.js API, Next.js dashboard, shared contracts, Docker Compose and tests are created. Configuration entries are persisted in PostgreSQL through Prisma, admin routes are protected by cookie-based JWT authentication and workspace roles, and configuration changes use versioned drafts, approval states, transactional publish, revision diff, safe rollback-as-draft and an audit log. The public runtime endpoint uses Redis cache-aside reads with TTL, PostgreSQL fallback and publish-time cache invalidation. Flowline Dispatch demonstrates real runtime behavior changes. GitHub Actions CI now runs tests, production builds and Docker image builds on push and pull requests.
+More detail: `docs/architecture.md`.
 
-## Local commands
+## Local development
+
+Requirements:
+
+- Node.js 24+
+- npm 11+
+- Docker Desktop
+
+Start infrastructure:
 
 ```powershell
-npm install
 docker compose up -d
-npm run db:migrate:init       # fresh database only
-npm run db:migrate:auth       # after the initial migration
-npm run db:migrate:workspace  # after the auth migration
-npm run db:migrate:workflow   # adds revisions and audit log
-npm run db:generate
-npm run db:seed
-npm run dev
 ```
 
-Run the migration commands that apply to your database state. If you already completed the workspace/RBAC stage, run `npm run db:migrate:workflow`, then `npm run db:generate` and `npm run db:seed`.
-
-Before the database commands, create `services/config-api/.env` from `services/config-api/.env.example`. If that file already exists from the PostgreSQL stage, add the `JWT_SECRET` line from the example manually.
-
-For a fresh checkout, run `npm run db:migrate:init` before `npm run db:seed`. For an existing checkout that already has the initial migration, run `npm run db:migrate:auth` instead.
-
-For the authentication migration after the initial migration, run `npm run db:migrate:auth` and then start the app. The first screen now contains registration and login.
-
-For the workspace and role migration after the authentication migration, run `npm run db:migrate:workspace`, then `npm run db:generate` and `npm run db:seed`. Restart the development process after the Prisma schema changes. Existing users can be linked to `Flowline Operations`; in the demo registration flow the first member becomes `owner`, while later registrations join as `viewer`.
-
-Web UI: `http://localhost:3000`  
-API health: `http://localhost:4000/api/health`  
-Runtime snapshot: `http://localhost:4000/api/configs/runtime?environment=staging`
-
-
-Workflow lesson: `docs/lessons/06-config-workflow-and-audit.md`  
-Diff/rollback lesson: `docs/lessons/07-diff-and-safe-rollback.md`  
-Redis cache lesson: `docs/lessons/08-redis-cache-and-invalidation.md`
-
-## Phase 5: Demo client and user management
-
-- `http://localhost:3000/` — authenticated OpsPilot admin console.
-- `http://localhost:3000/demo` — public demo consumer of the staging runtime configuration.
-- Owners/admins can open **Users** in the admin top bar to view registered accounts and manage workspace roles.
-- The first member of a fresh `Flowline Operations` workspace becomes `owner`; later demo registrations join as `viewer` (least-privilege default).
-- No Prisma migration is required for this phase because `User`, `WorkspaceMember`, and role fields already exist.
-
-Beginner walkthrough: `docs/lessons/09-demo-client-and-user-management.md`.
-
-## Phase 6: Production containers and health checks
-
-This phase prepares the same codebase for cloud deployment instead of relying on development processes.
-
-- Boolean configuration values now use an accessible on/off switch instead of manually typing `true` or `false`.
-- `apps/web/Dockerfile` builds the Next.js app with standalone output.
-- `services/config-api/Dockerfile` builds the NestJS API and exposes a separate one-shot Prisma migrator target.
-- `docker-compose.production.yml` runs PostgreSQL, Redis, migrations, demo seed, API and web with startup health conditions.
-- Production-like Docker uses separate named database/Redis volumes, so testing it does not overwrite the normal development data.
-- `GET /api/health/live` checks process liveness.
-- `GET /api/health/ready` verifies PostgreSQL readiness and reports Redis as ready/degraded.
-- `CORS_ORIGINS` and `COOKIE_SECURE` are now environment-driven so localhost and future HTTPS/AWS deployments can use different values without changing application code.
-- `.env.production.example` documents the production-like variables; real `.env.production.local` secrets should never be committed.
-
-Production-like local start:
-
-```powershell
-Copy-Item .env.production.example .env.production.local
-# Edit the copied file and replace placeholder secrets.
-
-docker compose down
-docker compose --env-file .env.production.local -f docker-compose.production.yml up --build -d
-docker compose --env-file .env.production.local -f docker-compose.production.yml ps
-```
-
-Do not use `docker compose down -v` unless you intentionally want to delete local database/Redis volumes.
-
-Beginner walkthrough: `docs/lessons/10-production-docker-and-health.md`.
-
-## Phase 7: Git, GitHub and CI
-
-- `.github/workflows/ci.yml` runs on push/PR to `main`.
-- CI installs exact dependencies with `npm ci`, runs tests/build, then builds both Docker images without publishing them.
-- `.github/dependabot.yml` checks npm and GitHub Actions updates weekly.
-- `.github/pull_request_template.md` adds a consistent review/testing checklist.
-- `package-lock.json` must be committed because CI and Docker builds now depend on it for reproducible installs.
-
-Beginner walkthrough: `docs/lessons/12-git-github-ci.md`.
-
-## CI test note
-
-Before Jest runs, the root `pretest` script builds `@opspilot/contracts`. This keeps Jest focused on the NestJS source while tests consume the shared contracts package through its compiled `dist` output. npm install-script approvals for the pinned Prisma/esbuild versions are declared in the root `allowScripts` policy.
-
-
-## Phase 8: Persistent Dispatch and central control plane
-
-OpsPilot now demonstrates a stronger B2B use case: one company workspace can centrally manage runtime policy for multiple products instead of rebuilding the same admin/RBAC/audit workflow inside every application.
-
-- Workspace = company/organization.
-- Project = one product or service inside that company.
-- The admin UI now has a Project selector.
-- Seed data includes **Flowline Dispatch** and **Flowline Customer Portal**.
-- Redis runtime cache keys are scoped by project + environment.
-- Flowline Dispatch tasks are stored in PostgreSQL and survive page reloads.
-- Task completion, weekly digest actions and carrier sync results create persistent backend events.
-- Runtime policy is enforced by the NestJS consumer backend:
-  - `limits.maxTasksPerUser` limits task creation;
-  - `service.maintenanceMode` rejects write actions;
-  - `notifications.weeklyDigest` enables/disables digest queueing;
-  - `limits.maxRetries` changes whether the simulated carrier integration succeeds.
-- Draft edits are now saved as part of **Submit for approval**, so the extra Save draft button is no longer required.
-- User management remains restricted to owner/admin and the returned member list is scoped to the current workspace.
-
-Apply the committed database migration before running this phase:
+For an existing database, apply committed migrations and regenerate Prisma:
 
 ```powershell
 npm run db:deploy
@@ -161,21 +222,60 @@ npm run db:generate
 npm run db:seed
 ```
 
-Beginner walkthrough: `docs/lessons/14-persistent-dispatch-control-plane.md`.
+Start the application:
 
+```powershell
+npm run dev
+```
 
-## Phase 9: External consumer integration
+Web: `http://localhost:3000`  
+API: `http://localhost:4000/api`  
+Dispatch demo: `http://localhost:3000/demo`  
+Customer Portal demo: `http://localhost:3000/demo/portal`
 
-OpsPilot now has a machine-to-machine integration path for real customer backends.
+## Public demo from a local machine
 
-- owner/admin can issue project + environment scoped service API keys;
-- raw secrets are shown once; PostgreSQL stores only SHA-256 hashes;
-- credentials have a single `runtime:read` scope and support revocation;
-- `lastUsedAt` makes real usage visible in the admin UI;
-- external services use `GET /api/runtime/v1/config` with a Bearer service key;
-- the old admin runtime inspector is JWT-protected;
-- `sdk/node` contains a small publishable `@opspilot/node` client;
-- SDK snapshots support `network`, `memory` and stale-on-error behavior;
-- a runnable consumer example lives in `sdk/node/examples/read-config.cjs`.
+The repository contains a same-origin Next.js API proxy for the public demo:
 
-Walkthrough: `docs/lessons/15-service-api-keys-and-node-sdk.md`.
+```powershell
+.\scripts\start-public-demo.ps1
+ngrok http 3000
+```
+
+ngrok only exposes the locally running application. It is not a cloud deployment.
+
+## Verification
+
+Run all tests and production builds:
+
+```powershell
+npm run verify
+```
+
+Run the Node SDK tests:
+
+```powershell
+npm run sdk:test
+```
+
+Run the authenticated runtime load test after setting a service key:
+
+```powershell
+$env:OPSPILOT_API_KEY = "opk_..."
+$env:OPSPILOT_URL = "http://localhost:3000"
+npm run loadtest:runtime
+```
+
+The production runtime endpoint has a configurable per-key rate limit. For a dedicated local performance experiment, intentionally raise `RUNTIME_RATE_LIMIT_PER_MINUTE`, restart the API and record the environment/settings together with the measured results.
+
+## What is deliberately not claimed
+
+The current repository does **not** claim a completed AWS deployment, Terraform infrastructure or an SNS/SQS implementation.
+
+Those are intentionally deferred to a later cloud/resume stage so the portfolio description remains verifiable from the code.
+
+The project also has not been tested under real production traffic. Load-test numbers should be reported only after running the included benchmark in a documented local environment.
+
+## Learning notes
+
+The `docs/lessons` folder contains Ukrainian walkthroughs for the major stages, including authentication, RBAC, workflow, Redis, Docker, CI, persistent demo behavior and service-to-service integration.

@@ -1,4 +1,8 @@
-import { Module } from "@nestjs/common";
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+} from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { AuthModule } from "./auth/auth.module";
 import { HealthController } from "./health.controller";
@@ -7,6 +11,7 @@ import { PrismaModule } from "./database/prisma.module";
 import { RedisCacheModule } from "./cache/redis-cache.module";
 import { DispatchModule } from "./dispatch/dispatch.module";
 import { IntegrationsModule } from "./integrations/integrations.module";
+import { RequestLoggingMiddleware } from "./observability/request-logging.middleware";
 
 @Module({
   imports: [
@@ -23,4 +28,8 @@ import { IntegrationsModule } from "./integrations/integrations.module";
   ],
   controllers: [HealthController],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestLoggingMiddleware).forRoutes("*");
+  }
+}

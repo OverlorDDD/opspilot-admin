@@ -38,6 +38,23 @@ export function CustomerPortalDemo() {
 
   useEffect(() => {
     void loadRuntime();
+
+    const interval = window.setInterval(() => {
+      void loadRuntime();
+    }, 5_000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void loadRuntime();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [loadRuntime]);
 
   const values = runtime?.values ?? {};
@@ -90,7 +107,11 @@ export function CustomerPortalDemo() {
         </div>
         <div className="portal-policy-card">
           <small>LIVE POLICY</small>
-          <strong>{runtime?.cache.status ?? "—"}</strong>
+          <strong>
+            {runtime
+              ? `${runtime.environment.toUpperCase()} · ${runtime.cache.status}`
+              : "—"}
+          </strong>
           <span>{runtime?.project.name ?? "Loading configuration…"}</span>
         </div>
       </section>

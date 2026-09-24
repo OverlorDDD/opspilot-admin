@@ -1,3 +1,11 @@
+import {
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname } from "node:path";
+
 export type ConfigValue =
   | number
   | boolean
@@ -20,7 +28,7 @@ export interface RuntimeConfig {
   };
 }
 
-export type SnapshotSource = "network" | "memory" | "stale";
+export type SnapshotSource = "network" | "memory" | "disk" | "stale";
 
 export interface OpsPilotSnapshot extends RuntimeConfig {
   sdk: {
@@ -34,6 +42,8 @@ export interface OpsPilotClientOptions {
   apiKey: string;
   refreshIntervalMs?: number;
   timeoutMs?: number;
+  snapshotFile?: string;
+  maxStaleMs?: number;
 }
 
 export interface PollingOptions {
@@ -46,6 +56,8 @@ export class OpsPilotClient {
   private readonly apiKey: string;
   private readonly refreshIntervalMs: number;
   private readonly timeoutMs: number;
+  private readonly snapshotFile: string | null;
+  private readonly maxStaleMs: number;
   private snapshot: OpsPilotSnapshot | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -62,11 +74,21 @@ export class OpsPilotClient {
       options.refreshIntervalMs ?? 60_000,
     );
     this.timeoutMs = Math.max(500, options.timeoutMs ?? 5_000);
+    this.snapshotFile = options.snapshotFile ?? null;
+    this.maxStaleMs = Math.max(
+      this.refreshIntervalMs,
+      options.maxStaleMs ?? 24 * 60 * 60 * 1_000,
+    );
+
+    this.snapshot = this.loadSnapshotFromDisk();
   }
 
   async getConfig(options: { force?: boolean } = {}): Promise<OpsPilotSnapshot> {
     if (!options.force && this.isFresh()) {
-      return this.withSource(this.snapshot!, "memory");
+      return this.withSource(
+        this.snapshot!,
+        this.snapshot?.sdk.source === "disk" ? "disk" : "memory",
+      );
     }
 
     try {
@@ -78,10 +100,12 @@ export class OpsPilotClient {
           fetchedAt: new Date().toISOString(),
         },
       };
+
       this.snapshot = snapshot;
+      this.persistSnapshot(snapshot);
       return snapshot;
     } catch (error) {
-      if (this.snapshot) {
+      if (this.snapshot && this.isWithinMaxStale(this.snapshot)) {
         return this.withSource(this.snapshot, "stale");
       }
 
@@ -128,9 +152,56 @@ export class OpsPilotClient {
 
   private isFresh(): boolean {
     if (!this.snapshot) return false;
-    const age =
-      Date.now() - new Date(this.snapshot.sdk.fetchedAt).getTime();
-    return age < this.refreshIntervalMs;
+    return this.ageMs(this.snapshot) < this.refreshIntervalMs;
+  }
+
+  private isWithinMaxStale(snapshot: OpsPilotSnapshot): boolean {
+    return this.ageMs(snapshot) <= this.maxStaleMs;
+  }
+
+  private ageMs(snapshot: OpsPilotSnapshot): number {
+    return Date.now() - new Date(snapshot.sdk.fetchedAt).getTime();
+  }
+
+  private loadSnapshotFromDisk(): OpsPilotSnapshot | null {
+    if (!this.snapshotFile) return null;
+
+    try {
+      const parsed = JSON.parse(
+        readFileSync(this.snapshotFile, "utf8"),
+      ) as OpsPilotSnapshot;
+
+      if (
+        !parsed?.project?.id ||
+        !parsed.environment ||
+        !parsed.values ||
+        !parsed.sdk?.fetchedAt
+      ) {
+        return null;
+      }
+
+      if (!this.isWithinMaxStale(parsed)) {
+        return null;
+      }
+
+      return this.withSource(parsed, "disk");
+    } catch {
+      return null;
+    }
+  }
+
+  private persistSnapshot(snapshot: OpsPilotSnapshot): void {
+    if (!this.snapshotFile) return;
+
+    try {
+      mkdirSync(dirname(this.snapshotFile), { recursive: true });
+      const tempFile = `${this.snapshotFile}.tmp`;
+      writeFileSync(tempFile, JSON.stringify(snapshot, null, 2), "utf8");
+      renameSync(tempFile, this.snapshotFile);
+    } catch {
+      // Runtime config persistence is a resilience feature, not a reason to
+      // fail a customer request. The in-memory snapshot still remains usable.
+    }
   }
 
   private async fetchRuntime(): Promise<RuntimeConfig> {

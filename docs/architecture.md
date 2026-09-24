@@ -1,84 +1,177 @@
-# Architecture
+# OpsPilot architecture
 
-## High-level topology
+## Product boundary
 
-```mermaid
-flowchart TD
-    Browser["Next.js admin console"] --> Gateway["Nest.js API gateway"]
-    Runtime["Flowline runtime"] --> PublicAPI["Public config API"]
-    Gateway --> Identity["Identity service"]
-    Gateway --> Config["Configuration service"]
-    PublicAPI --> Config
-    Config --> Data[("PostgreSQL")]
-    Config --> Cache[("Redis")]
-    Config --> Events["Event bus"]
-    Events --> Workers["Audit and notification workers"]
-```
+OpsPilot is the **control plane**. It owns governance around operational configuration:
 
-## Why this structure
+- authentication and RBAC;
+- Projects and Environments;
+- each Project's supported runtime-parameter catalog;
+- Draft / Approval / Publish;
+- revision history and rollback;
+- audit trail;
+- service credentials.
 
-### Next.js admin console
+A customer's application is the **consumer**. It owns its own business logic and persistent business data.
 
-The browser UI owns routes, forms, tables, loading states and error states. It never becomes the source of truth for permissions or publishing rules.
+OpsPilot does not rewrite the customer's source code. The customer integrates once with the runtime API/SDK and then reads published values dynamically.
 
-### Nest.js API gateway
+## Main request paths
 
-The gateway is the stable HTTP entry point for the web client. It will handle authentication, authorization and API composition while hiding internal service addresses from the browser.
-
-### Identity service
-
-This service owns registration, password hashing, sessions/tokens, user profile and workspace membership. Keeping identity separate makes authorization rules explicit. A workspace is the tenant boundary: configuration queries are scoped to the workspace attached to the authenticated request.
-
-### Configuration service
-
-This bounded context owns parameter schema, drafts, versions, validation, publish, rollback and active runtime values. It is the only service allowed to mutate configuration data.
-
-### Public config API
-
-The customer-facing Flowline service reads a small, cacheable runtime snapshot. The read path is intentionally different from the admin write path: it needs low latency, a stable payload and rate limiting.
-
-### Event bus and workers
-
-Audit fan-out, notifications and analytics should not block a user waiting for a publish response. The configuration service emits events; workers process them asynchronously and must be idempotent.
-
-## First implementation boundary
-
-The first vertical slice contains one Nest.js `config-api` service and one Next.js app. The service boundary is already visible in the repository, but we will extract identity, notifications and workers only when their domain contracts are clear. This avoids decorative microservices and teaches why a boundary exists.
-
-## Deployment target
-
-Locally, PostgreSQL and Redis run in Docker Compose. In AWS, the target is ECS/Fargate behind an Application Load Balancer, PostgreSQL in RDS, object storage in S3, events through SNS/SQS, logs in CloudWatch and all infrastructure in Terraform.
-
-We do not add Kubernetes just to say «microservices». ECS/Fargate provides containers, health checks, rolling deployments, IAM and autoscaling with less operational overhead for this portfolio project.
-## Authentication boundary
-
-The browser never talks directly to PostgreSQL. It calls the Nest.js API. Registration and login create an httpOnly JWT cookie; the API's `JwtAuthGuard` verifies that cookie before allowing private configuration operations. The health endpoint and future runtime snapshot remain separate public endpoints.
+### Human admin request
 
 ```text
-Next.js UI -> Nest.js AuthController -> bcrypt/User table
-Next.js UI -> cookie -> JwtAuthGuard -> ConfigsController -> Prisma -> PostgreSQL
+Browser
+→ Next.js UI
+→ /api same-origin proxy
+→ NestJS
+→ JwtAuthGuard
+→ WorkspaceRoleGuard
+→ Controller
+→ Service
+→ Prisma
+→ PostgreSQL
 ```
 
-Private configuration routes use two guards in sequence:
+The Guard answers authorization questions such as "may an editor submit this change?". The Service applies business rules such as "is this proposed value valid?". New configuration keys must also exist in the active Project's supported-parameter catalog; this prevents operational data that the consumer application never reads.
+
+### Publish
 
 ```text
-JWT cookie -> JwtAuthGuard -> user + workspace -> WorkspaceRoleGuard -> endpoint
+Approved revision
+→ owner/admin Publish
+→ Prisma transaction
+   ├── revision becomes PUBLISHED
+   ├── ConfigEntry receives the published value
+   └── AuditLog receives CONFIG_PUBLISHED
+→ Redis runtime cache invalidation
 ```
 
-`JwtAuthGuard` answers «who is making this request?». `WorkspaceRoleGuard` answers «is this user's role allowed to perform this action?». The browser may hide controls for read-only roles, but the API remains the authoritative security boundary.
+Only **published** values are exposed to runtime consumers.
 
-
-## Safe configuration write path
-
-Configuration writes now use a versioned workflow instead of directly overwriting the runtime value:
+### External runtime consumer
 
 ```text
-Editor -> DRAFT -> PENDING_APPROVAL
-Approver -> APPROVED / REJECTED
-Owner/Admin -> PUBLISHED
-Previous PUBLISHED -> ARCHIVED
+Customer backend
+→ @opspilot/node
+→ Authorization: Bearer opk_...
+→ GET /api/runtime/v1/config
+→ ServiceApiKeyGuard
+→ SHA-256(candidate secret)
+→ Redis auth-context cache
+   ├── HIT → authenticated context
+   └── MISS → PostgreSQL key lookup + lastUsedAt → Redis SET
+→ RuntimeRateLimitGuard
+→ ConfigsService
+→ Redis cache
+   ├── HIT → return snapshot
+   └── MISS → PostgreSQL → Redis SET → return snapshot
+→ SDK memory snapshot
+→ optional disk snapshot
+→ customer business code
 ```
 
-`ConfigEntry` is the stable identity of a parameter and stores the currently published runtime value. `ConfigRevision` stores proposed and historical versions. Publishing runs inside one PostgreSQL transaction so archiving the old revision, activating the approved value and writing the audit event either all succeed or all roll back together.
+The service key is bound to one Project + Environment. The consumer does not choose that scope in query parameters.
 
-The audit log is append-only through the application API. It records the actor, action, target configuration, timestamps and before/after snapshots for important workflow transitions.
+## Availability decisions
+
+PostgreSQL is required for the control plane.
+
+Redis is an optimization and protection layer:
+
+- runtime configuration cache;
+- short-lived service-key authentication context cache;
+- fixed-window runtime rate-limit counters.
+
+If Redis is unavailable:
+
+- runtime config falls back to PostgreSQL;
+- rate limiting fails open for availability;
+- readiness reports Redis as degraded rather than making the whole service unavailable.
+
+The Node SDK adds a second resilience boundary on the customer side:
+
+- `network`: fresh snapshot from OpsPilot;
+- `memory`: fresh local process snapshot;
+- `disk`: snapshot recovered after process restart;
+- `stale`: OpsPilot refresh failed, but the last snapshot is still inside `maxStaleMs`.
+
+This prevents a short OpsPilot outage from automatically becoming a customer outage.
+
+## Data ownership
+
+### PostgreSQL
+
+Persistent source of truth for:
+
+- users;
+- workspaces and memberships;
+- projects;
+- configuration entries;
+- revisions;
+- audit logs;
+- Dispatch demo tasks/events;
+- service API key hashes and metadata.
+
+### Redis
+
+Temporary data only:
+
+- runtime configuration snapshots with TTL;
+- per-key rate-limit counters.
+
+Redis data can be recreated from PostgreSQL/runtime traffic.
+
+### Customer-side SDK snapshot
+
+Optional local persistence owned by the consumer. It contains only the runtime configuration the service key is allowed to read.
+
+## Security boundaries
+
+- JWT cookie authenticates a human user.
+- RBAC authorizes human actions.
+- Service API key authenticates a machine.
+- Service-key `runtime:read` scope applies least privilege.
+- Raw service keys are not stored in PostgreSQL.
+- Service keys are bound server-side to Project + Environment.
+- User/member lists are scoped to the active Workspace.
+- Backend validation is authoritative; frontend validation exists for UX only.
+- Secrets must stay in server-side environment variables and never in `NEXT_PUBLIC_*`.
+
+## Observability
+
+Every API request receives an `x-request-id`.
+
+NestJS writes structured access logs containing:
+
+- request ID;
+- method;
+- path;
+- HTTP status;
+- duration in milliseconds.
+
+Health endpoints:
+
+- `/api/health/live`: process liveness;
+- `/api/health/ready`: required PostgreSQL readiness + Redis degradation status.
+
+## Scaling path
+
+The current code is designed so the NestJS API can remain stateless with respect to user sessions and runtime reads.
+
+A future cloud deployment can horizontally scale API instances behind a load balancer while sharing PostgreSQL and Redis.
+
+Before claiming production-scale performance, use the included load-test script and report the exact machine, concurrency, request count, rate-limit setting and measured p50/p95/p99 latency.
+
+## Deferred intentionally
+
+Not implemented yet:
+
+- AWS deployment;
+- Terraform;
+- managed PostgreSQL/Redis;
+- message queue/background worker;
+- centralized production log platform;
+- published npm package for `@opspilot/node`.
+
+These are future infrastructure stages, not current project claims.
