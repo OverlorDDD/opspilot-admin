@@ -136,7 +136,11 @@ export class ConfigWorkflowService {
     const draft = await this.findDraft(configEntryId);
 
     if (request.value !== undefined) {
-      this.configsService.validateValue(config.type as ConfigKeyType, request.value);
+      this.configsService.validateValue(
+        config.type as ConfigKeyType,
+        request.value,
+        config.name,
+      );
     }
 
     const nextValue = request.value ?? (draft.value as ConfigValue);
@@ -170,18 +174,42 @@ export class ConfigWorkflowService {
     configEntryId: string,
     workspaceId: string,
     actorUserId: string,
+    request: { value?: ConfigValue; description?: string } = {},
   ): Promise<ConfigWorkflowResponse> {
-    await this.getConfig(configEntryId, workspaceId);
+    const config = await this.getConfig(configEntryId, workspaceId);
     const draft = await this.findDraft(configEntryId);
 
-    await this.transitionWithAudit({
-      revisionId: draft.id,
-      configEntryId,
-      workspaceId,
-      actorUserId,
-      action: "DRAFT_SUBMITTED",
-      before: draft,
-      data: { status: "PENDING_APPROVAL" },
+    if (request.value !== undefined) {
+      this.configsService.validateValue(
+        config.type as ConfigKeyType,
+        request.value,
+        config.name,
+      );
+    }
+
+    const nextValue = request.value ?? (draft.value as ConfigValue);
+    const nextDescription = request.description ?? draft.description;
+
+    await this.prisma.$transaction(async (tx) => {
+      const submitted = await tx.configRevision.update({
+        where: { id: draft.id },
+        data: {
+          value: nextValue as Prisma.InputJsonValue,
+          description: nextDescription,
+          status: "PENDING_APPROVAL",
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          workspaceId,
+          configEntryId,
+          actorUserId,
+          action: "DRAFT_SUBMITTED",
+          before: this.revisionSnapshot(draft),
+          after: this.revisionSnapshot(submitted),
+        },
+      });
     });
 
     return this.getWorkflow(configEntryId, workspaceId);
@@ -422,7 +450,10 @@ export class ConfigWorkflowService {
       });
     });
 
-    await this.runtimeCache.invalidate(config.environment as EnvironmentName);
+    await this.runtimeCache.invalidate(
+      config.projectId,
+      config.environment as EnvironmentName,
+    );
 
     return this.getWorkflow(configEntryId, workspaceId);
   }

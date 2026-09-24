@@ -39,7 +39,11 @@ function createService() {
   };
 
   const prisma = {
-    project: { findFirst: jest.fn().mockResolvedValue(project) },
+    project: {
+      findFirst: jest.fn().mockResolvedValue(project),
+      findUnique: jest.fn().mockResolvedValue(project),
+      findMany: jest.fn().mockResolvedValue([project]),
+    },
     configEntry: {
       findMany: jest.fn().mockResolvedValue([
         makeEntry(),
@@ -93,21 +97,47 @@ describe("ConfigsService", () => {
   });
 
   it("uses PostgreSQL on a cache miss, stores the snapshot, and excludes unpublished keys", async () => {
-    const { service, runtimeCache } = createService();
+    const { service, prisma, runtimeCache } = createService();
 
-    const result = await service.getRuntime("staging");
+    const result = await service.getRuntime("staging", "flowline-service");
 
     expect(result.values["limits.maxTasksPerUser"]).toBe(25);
     expect(result.values["service.maintenanceMode"]).toBe(false);
-    expect(result.values["notifications.weeklyDigest"]).toBeUndefined();
     expect(result.cache.status).toBe("MISS");
+    expect(prisma.configEntry.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ isPublished: true }),
+      }),
+    );
     expect(runtimeCache.write).toHaveBeenCalledWith(
+      "flowline-service",
       "staging",
       expect.objectContaining({
         environment: "staging",
         values: expect.objectContaining({ "limits.maxTasksPerUser": 25 }),
       }),
     );
+  });
+
+  it("filters legacy runtime keys that are not declared by the project catalog", async () => {
+    const { service, runtimeCache } = createService();
+    runtimeCache.read.mockResolvedValue({
+      status: "HIT",
+      value: {
+        project,
+        environment: "staging",
+        values: {
+          "limits.maxRetries": 3,
+          Greetings: "Hello, World!",
+        },
+        generatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+
+    const result = await service.getRuntime("staging", "flowline-service");
+
+    expect(result.values["limits.maxRetries"]).toBe(3);
+    expect(result.values.Greetings).toBeUndefined();
   });
 
   it("returns a Redis cache hit without querying PostgreSQL", async () => {
@@ -122,7 +152,7 @@ describe("ConfigsService", () => {
       },
     });
 
-    const result = await service.getRuntime("staging");
+    const result = await service.getRuntime("staging", "flowline-service");
 
     expect(result.cache.status).toBe("HIT");
     expect(result.values["limits.maxTasksPerUser"]).toBe(25);
@@ -135,7 +165,7 @@ describe("ConfigsService", () => {
     runtimeCache.read.mockResolvedValue({ status: "BYPASS", value: null });
     runtimeCache.write.mockResolvedValue(false);
 
-    const result = await service.getRuntime("staging");
+    const result = await service.getRuntime("staging", "flowline-service");
 
     expect(result.cache.status).toBe("BYPASS");
     expect(result.values["limits.maxTasksPerUser"]).toBe(25);
@@ -154,10 +184,11 @@ describe("ConfigsService", () => {
 
     const created = await service.create(
       {
+        projectId: "flowline-service",
         environment: "staging",
-        name: "limits.maxProjects",
+        name: "limits.maxRetries",
         type: "number",
-        value: 12,
+        value: 4,
       },
       "flowline-workspace",
       "user-1",
@@ -175,6 +206,42 @@ describe("ConfigsService", () => {
       }),
     );
     expect(tx.auditLog.create).toHaveBeenCalled();
+  });
+
+  it("returns the supported parameter catalog for a project", async () => {
+    const { service } = createService();
+
+    const result = await service.listCatalog(
+      "flowline-workspace",
+      "flowline-service",
+    );
+
+    expect(result.items.map((item) => item.name)).toEqual(
+      expect.arrayContaining([
+        "limits.maxTasksPerUser",
+        "limits.maxRetries",
+        "service.maintenanceMode",
+        "notifications.weeklyDigest",
+      ]),
+    );
+  });
+
+  it("rejects a config key that the project consumer did not declare", async () => {
+    const { service } = createService();
+
+    await expect(
+      service.create(
+        {
+          projectId: "flowline-service",
+          environment: "staging",
+          name: "banana.speed",
+          type: "number",
+          value: 999,
+        },
+        "flowline-workspace",
+        "user-1",
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it("throws a not-found error for an unknown key", async () => {

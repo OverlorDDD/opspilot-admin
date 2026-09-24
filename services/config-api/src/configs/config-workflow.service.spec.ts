@@ -124,7 +124,10 @@ describe("ConfigWorkflowService", () => {
         data: expect.objectContaining({ action: "CONFIG_PUBLISHED" }),
       }),
     );
-    expect(runtimeCache.invalidate).toHaveBeenCalledWith("staging");
+    expect(runtimeCache.invalidate).toHaveBeenCalledWith(
+      "flowline-service",
+      "staging",
+    );
   });
 
   it("refuses to publish when there is no approved revision", async () => {

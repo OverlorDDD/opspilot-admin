@@ -20,6 +20,7 @@ model User {
   reviewedRevisions  ConfigRevision[] @relation("RevisionReviewedBy")
   publishedRevisions ConfigRevision[] @relation("RevisionPublishedBy")
   auditLogs          AuditLog[]       @relation("AuditActor")
+  createdServiceKeys ServiceApiKey[]  @relation("ServiceKeyCreatedBy")
 
   @@map("users")
 }
@@ -40,7 +41,8 @@ model Workspace {
   updatedAt DateTime          @updatedAt @map("updated_at")
   members   WorkspaceMember[]
   projects  Project[]
-  auditLogs AuditLog[]
+  auditLogs   AuditLog[]
+  serviceKeys ServiceApiKey[]
 
   @@map("workspaces")
 }
@@ -88,6 +90,8 @@ enum AuditAction {
   DRAFT_APPROVED
   DRAFT_REJECTED
   CONFIG_PUBLISHED
+  SERVICE_KEY_CREATED
+  SERVICE_KEY_REVOKED
 }
 
 model Project {
@@ -97,7 +101,10 @@ model Project {
   name        String
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
-  configs     ConfigEntry[]
+  configs        ConfigEntry[]
+  dispatchTasks  DispatchTask[]
+  dispatchEvents DispatchEvent[]
+  serviceKeys     ServiceApiKey[]
 
   @@map("projects")
 }
@@ -164,4 +171,68 @@ model AuditLog {
   @@index([workspaceId, createdAt])
   @@index([configEntryId, createdAt])
   @@map("audit_logs")
+}
+
+
+enum DispatchTaskStatus {
+  QUEUED
+  IN_PROGRESS
+  DONE
+}
+
+enum DispatchEventType {
+  TASK_CREATED
+  TASK_COMPLETED
+  DIGEST_QUEUED
+  CARRIER_SYNC_SUCCEEDED
+  CARRIER_SYNC_FAILED
+}
+
+model DispatchTask {
+  id        String             @id @default(cuid())
+  projectId String             @map("project_id")
+  project   Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title     String
+  status    DispatchTaskStatus @default(QUEUED)
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
+
+  @@index([projectId, status])
+  @@map("dispatch_tasks")
+}
+
+model DispatchEvent {
+  id        String            @id @default(cuid())
+  projectId String            @map("project_id")
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type      DispatchEventType
+  message   String
+  metadata  Json?
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  @@index([projectId, createdAt])
+  @@map("dispatch_events")
+}
+
+
+model ServiceApiKey {
+  id          String      @id @default(cuid())
+  workspaceId String      @map("workspace_id")
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId   String      @map("project_id")
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment Environment
+  name        String
+  keyPrefix   String      @map("key_prefix")
+  keyHash     String      @unique @map("key_hash")
+  scope       String      @default("runtime:read")
+  createdById String?     @map("created_by_id")
+  createdBy   User?       @relation("ServiceKeyCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  lastUsedAt  DateTime?   @map("last_used_at")
+  revokedAt   DateTime?   @map("revoked_at")
+
+  @@index([workspaceId, projectId, environment])
+  @@index([projectId, environment, revokedAt])
+  @@map("service_api_keys")
 }

@@ -126,13 +126,11 @@ export function TeamManagement({
       <div className="panel-heading team-heading">
         <div>
           <p className="eyebrow">USER MANAGEMENT</p>
-          <h3>Registered users & workspace roles</h3>
+          <h3>Workspace members & roles</h3>
           <p className="team-intro">
-            A user account and workspace access are separate things. Assigning a
-            role creates or updates that user&apos;s membership in {workspace.name}.
-            This portfolio demo intentionally shows all registered demo accounts;
-            a multi-company SaaS would normally scope this list to the current
-            organization and use invitations instead of exposing other tenants.
+            Only owners and admins can open this panel. The list is scoped to
+            {workspace.name}, so members of another company&apos;s workspace are not
+            exposed. Roles are enforced again by the NestJS API, not only by React.
           </p>
         </div>
         <button className="close-button" type="button" onClick={onClose}>
@@ -141,7 +139,7 @@ export function TeamManagement({
       </div>
 
       <div className="team-stats">
-        <span>{data?.users.length ?? 0} registered accounts</span>
+        <span>{data?.users.length ?? 0} workspace members</span>
         <span>{memberCount} workspace members</span>
         <span>Your role: {workspace.role}</span>
       </div>

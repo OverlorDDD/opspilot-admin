@@ -1,7 +1,9 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type {
+  ConfigCatalogItem,
+  ConfigCatalogResponse,
   ConfigEntry,
   ConfigKeyType,
   ConfigListResponse,
@@ -9,12 +11,14 @@ import type {
   ConfigRevisionStatus,
   ConfigWorkflowResponse,
   EnvironmentName,
+  ProjectListResponse,
   RuntimeConfigResponse,
   UserSummary,
   WorkspaceSummary,
 } from "@opspilot/contracts";
 import { AccountSettings } from "./account-settings";
 import { TeamManagement } from "./team-management";
+import { ServiceKeyManagement } from "./service-key-management";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
 const environments: EnvironmentName[] = [
@@ -22,6 +26,11 @@ const environments: EnvironmentName[] = [
   "staging",
   "production",
 ];
+
+const projectDemoRoutes: Record<string, string> = {
+  "flowline-service": "/demo",
+  "flowline-customer-portal": "/demo/portal",
+};
 
 type FormState = {
   name: string;
@@ -49,6 +58,9 @@ export function ConfigConsole({
   onUserUpdated: (user: UserSummary) => void;
 }) {
   const [environment, setEnvironment] = useState<EnvironmentName>("staging");
+  const [projectId, setProjectId] = useState("flowline-service");
+  const [projects, setProjects] = useState<ProjectListResponse["items"]>([]);
+  const [catalog, setCatalog] = useState<ConfigCatalogItem[]>([]);
   const [data, setData] = useState<ConfigListResponse | null>(null);
   const [selected, setSelected] = useState<ConfigEntry | null>(null);
   const [workflow, setWorkflow] = useState<ConfigWorkflowResponse | null>(null);
@@ -59,6 +71,7 @@ export function ConfigConsole({
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showTeam, setShowTeam] = useState(false);
+  const [showIntegrations, setShowIntegrations] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   const [diff, setDiff] = useState<ConfigRevisionDiffResponse | null>(null);
   const [diffFromVersion, setDiffFromVersion] = useState("");
@@ -66,19 +79,54 @@ export function ConfigConsole({
   const [diffLoading, setDiffLoading] = useState(false);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<RuntimeConfigResponse | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
+  const editorPanelRef = useRef<HTMLFormElement | null>(null);
+  const supportedKeySelectRef = useRef<HTMLSelectElement | null>(null);
 
   const canEditDrafts = ["owner", "admin", "editor"].includes(workspace.role);
   const canReview = ["owner", "admin", "approver"].includes(workspace.role);
   const canPublish = ["owner", "admin"].includes(workspace.role);
   const activeStatus = workflow?.activeRevision?.status ?? null;
   const isDraftEditable = activeStatus === "DRAFT" && canEditDrafts;
+  const demoClientHref = projectDemoRoutes[projectId] ?? "/demo";
+  const availableCatalogItems = catalog.filter(
+    (definition) =>
+      !data?.items.some((entry) => entry.name === definition.name),
+  );
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const response = await apiRequest<ProjectListResponse>(
+        `${API_URL}/configs/projects`,
+      );
+      setProjects(response.items);
+      if (
+        response.items.length > 0 &&
+        !response.items.some((project) => project.id === projectId)
+      ) {
+        setProjectId(response.items[0].id);
+      }
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    }
+  }, [projectId]);
+
+  const loadCatalog = useCallback(async () => {
+    try {
+      const response = await apiRequest<ConfigCatalogResponse>(
+        `${API_URL}/configs/catalog?projectId=${encodeURIComponent(projectId)}`,
+      );
+      setCatalog(response.items);
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    }
+  }, [projectId]);
 
   const loadConfigs = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const response = await apiRequest<ConfigListResponse>(
-        `${API_URL}/configs?environment=${environment}`,
+        `${API_URL}/configs?environment=${environment}&projectId=${encodeURIComponent(projectId)}`,
       );
       setData(response);
     } catch (requestError) {
@@ -86,13 +134,13 @@ export function ConfigConsole({
     } finally {
       setLoading(false);
     }
-  }, [environment]);
+  }, [environment, projectId]);
 
   const loadRuntime = useCallback(async () => {
     setRuntimeLoading(true);
     try {
       const response = await apiRequest<RuntimeConfigResponse>(
-        `${API_URL}/configs/runtime?environment=${environment}`,
+        `${API_URL}/configs/runtime?environment=${environment}&projectId=${encodeURIComponent(projectId)}`,
       );
       setRuntimeSnapshot(response);
     } catch (requestError) {
@@ -100,12 +148,17 @@ export function ConfigConsole({
     } finally {
       setRuntimeLoading(false);
     }
-  }, [environment]);
+  }, [environment, projectId]);
 
   useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
+
+  useEffect(() => {
+    void loadCatalog();
     void loadConfigs();
     void loadRuntime();
-  }, [loadConfigs, loadRuntime]);
+  }, [loadCatalog, loadConfigs, loadRuntime]);
 
   async function loadWorkflow(entry: ConfigEntry) {
     setWorkflowLoading(true);
@@ -177,11 +230,37 @@ export function ConfigConsole({
   }
 
   function startNewKey() {
+    const firstAvailable = availableCatalogItems[0];
+
+    if (!firstAvailable) {
+      setError(
+        "All parameters supported by this project already exist in the selected environment.",
+      );
+      return;
+    }
+
     setSelected(null);
     setWorkflow(null);
     setDiff(null);
-    setForm(initialForm);
+    applyCatalogDefinition(firstAvailable);
     setError(null);
+
+    window.requestAnimationFrame(() => {
+      editorPanelRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      supportedKeySelectRef.current?.focus();
+    });
+  }
+
+  function applyCatalogDefinition(definition: ConfigCatalogItem) {
+    setForm({
+      name: definition.name,
+      type: definition.type,
+      value: stringifyValue(definition.defaultValue),
+      description: definition.description,
+    });
   }
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
@@ -200,6 +279,7 @@ export function ConfigConsole({
           method: "POST",
           body: JSON.stringify({
             ...payload,
+            projectId,
             name: form.name,
             type: form.type,
             environment,
@@ -244,7 +324,12 @@ export function ConfigConsole({
       const body =
         action === "reject"
           ? JSON.stringify({ reason: rejectionReason.trim() || undefined })
-          : undefined;
+          : action === "submit"
+            ? JSON.stringify({
+                value: parseValue(form.value, form.type),
+                description: form.description,
+              })
+            : undefined;
       const response = await apiRequest<ConfigWorkflowResponse>(
         `${API_URL}/configs/${selected.id}/${action}`,
         { method: "POST", body },
@@ -315,6 +400,26 @@ export function ConfigConsole({
           </div>
         </div>
         <div className="environment-picker">
+          <label htmlFor="project">Project</label>
+          <select
+            id="project"
+            value={projectId}
+            onChange={(event) => {
+              setSelected(null);
+              setWorkflow(null);
+              setDiff(null);
+              setForm(initialForm);
+              setProjectId(event.target.value);
+            }}
+          >
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="environment-picker">
           <label htmlFor="environment">Environment</label>
           <select
             id="environment"
@@ -345,23 +450,37 @@ export function ConfigConsole({
           </div>
           <a
             className="logout-button nav-link-button"
-            href="/demo"
+            href={demoClientHref}
             target="_blank"
             rel="noreferrer"
           >
             Demo client
           </a>
           {["owner", "admin"].includes(workspace.role) && (
-            <button
-              className="logout-button"
-              type="button"
-              onClick={() => {
-                setShowTeam(!showTeam);
-                setShowSettings(false);
-              }}
-            >
-              Users
-            </button>
+            <>
+              <button
+                className="logout-button"
+                type="button"
+                onClick={() => {
+                  setShowIntegrations(!showIntegrations);
+                  setShowTeam(false);
+                  setShowSettings(false);
+                }}
+              >
+                Integrations
+              </button>
+              <button
+                className="logout-button"
+                type="button"
+                onClick={() => {
+                  setShowTeam(!showTeam);
+                  setShowIntegrations(false);
+                  setShowSettings(false);
+                }}
+              >
+                Users
+              </button>
+            </>
           )}
           <button
             className="logout-button"
@@ -369,6 +488,7 @@ export function ConfigConsole({
             onClick={() => {
               setShowSettings(!showSettings);
               setShowTeam(false);
+              setShowIntegrations(false);
             }}
           >
             Settings
@@ -399,9 +519,23 @@ export function ConfigConsole({
         />
       )}
 
+
+      {showIntegrations && (
+        <ServiceKeyManagement
+          projectId={projectId}
+          projectName={
+            projects.find((project) => project.id === projectId)?.name ??
+            data?.project.name ??
+            projectId
+          }
+          environment={environment}
+          onClose={() => setShowIntegrations(false)}
+        />
+      )}
+
       <section className="hero-grid">
         <div className="hero-copy">
-          <p className="eyebrow accent">FLOWLINE SERVICE</p>
+          <p className="eyebrow accent">{data?.project.name?.toUpperCase() ?? "FLOWLINE PROJECT"}</p>
           <h2>Ship configuration changes with a review trail.</h2>
           <p className="hero-description">
             Draft a change, send it for approval, publish only reviewed values,
@@ -474,11 +608,18 @@ export function ConfigConsole({
             </div>
             <button
               className="secondary-button"
-              disabled={!canEditDrafts}
+              disabled={!canEditDrafts || availableCatalogItems.length === 0}
+              title={
+                availableCatalogItems.length === 0
+                  ? "All supported parameters already exist in this environment."
+                  : "Add a parameter declared by this project."
+              }
               type="button"
               onClick={startNewKey}
             >
-              + New key
+              {availableCatalogItems.length > 0
+                ? "+ Add supported key"
+                : "All supported keys added"}
             </button>
           </div>
 
@@ -510,7 +651,11 @@ export function ConfigConsole({
           )}
         </div>
 
-        <form className="panel editor-panel" onSubmit={handleSave}>
+        <form
+          ref={editorPanelRef}
+          className="panel editor-panel"
+          onSubmit={handleSave}
+        >
           <div className="panel-heading">
             <div>
               <p className="eyebrow">
@@ -523,37 +668,48 @@ export function ConfigConsole({
             </span>
           </div>
 
-          <label className="field">
-            <span>Key name</span>
-            <input
-              required
-              disabled={Boolean(selected) || !canEditDrafts}
-              value={form.name}
-              onChange={(event) => setForm({ ...form, name: event.target.value })}
-              placeholder="car.maxSpeed"
-            />
-          </label>
+          {selected ? (
+            <>
+              <label className="field">
+                <span>Key name</span>
+                <input disabled value={form.name} />
+              </label>
 
-          <label className="field">
-            <span>Type</span>
-            <select
-              disabled={Boolean(selected) || !canEditDrafts}
-              value={form.type}
-              onChange={(event) => {
-                const nextType = event.target.value as ConfigKeyType;
-                setForm({
-                  ...form,
-                  type: nextType,
-                  value: nextType === "boolean" ? "false" : "",
-                });
-              }}
-            >
-              <option value="number">number</option>
-              <option value="boolean">boolean</option>
-              <option value="string">string</option>
-              <option value="json">json</option>
-            </select>
-          </label>
+              <label className="field">
+                <span>Type</span>
+                <input disabled value={form.type} />
+              </label>
+            </>
+          ) : (
+            <>
+              <label className="field">
+                <span>Supported parameter</span>
+                <select
+                  ref={supportedKeySelectRef}
+                  required
+                  disabled={!canEditDrafts || availableCatalogItems.length === 0}
+                  value={form.name}
+                  onChange={(event) => {
+                    const definition = availableCatalogItems.find(
+                      (item) => item.name === event.target.value,
+                    );
+                    if (definition) applyCatalogDefinition(definition);
+                  }}
+                >
+                  {availableCatalogItems.map((definition) => (
+                    <option key={definition.name} value={definition.name}>
+                      {definition.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                <span>Type</span>
+                <input disabled value={form.type} />
+              </label>
+            </>
+          )}
 
           <div className="field">
             <span>{selected && !isDraftEditable ? "Current / proposed value" : "Value"}</span>
@@ -641,16 +797,13 @@ export function ConfigConsole({
 
             {selected && activeStatus === "DRAFT" && canEditDrafts && (
               <>
-                <button className="secondary-button" disabled={saving} type="submit">
-                  Save draft
-                </button>
                 <button
                   className="primary-button"
                   disabled={saving}
                   type="button"
                   onClick={() => void runWorkflowAction("submit")}
                 >
-                  Submit for approval
+                  {saving ? "Submitting…" : "Submit for approval"}
                 </button>
               </>
             )}
