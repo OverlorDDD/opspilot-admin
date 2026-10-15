@@ -132,3 +132,38 @@ Beginner walkthrough: `docs/lessons/12-git-github-ci.md`.
 ## CI test note
 
 Before Jest runs, the root `pretest` script builds `@opspilot/contracts`. This keeps Jest focused on the NestJS source while tests consume the shared contracts package through its compiled `dist` output. npm install-script approvals for the pinned Prisma/esbuild versions are declared in the root `allowScripts` policy.
+
+---
+
+## Two-site launch (Windows PowerShell)
+
+Keep Docker Desktop running. No PowerShell scripts outside the repositories are required. This project is the **single orchestrator** for launching both existing products.
+
+| Command (run from OpsPilot root) | Result |
+|---|---|
+| `npm run dev` | Existing local OpsPilot at http://localhost:3000 (start Docker separately if needed) |
+| `npm run dev:public` | OpsPilot production build + https://voyage-matchbox-claim.ngrok-free.dev |
+| `npm run dev:both` | OpsPilot and Jyotish on distinct ports, both PostgreSQL services, Redis, ngrok and Cloudflare |
+
+| Project | Frontend | Private Nest API | Docker |
+|---|---|---|---|
+| OpsPilot | 3000 | 4000 | PostgreSQL 5432, Redis 6379 |
+| Jyotish | 3001 | 4001 | PostgreSQL 5433 |
+
+Prerequisites: Node 24+, npm, Docker Desktop, `ngrok` configured with account authtoken, and optional `cloudflared` (required for the Jyotish public URL). Run `npm install` yourself in **both** clones once; the launch script never installs or pulls. Existing `.env` files stay local and unchanged.
+
+**Paths:** by default Jyotish is expected in a sibling folder `jyotish-studio-git`. If stored elsewhere, in the same PowerShell session set:
+```powershell
+$env:JYOTISH_PATH="C:\projects\jyotish-studio-git"
+npm run dev:both
+```
+
+**Before public exposure:** choose strong unique authentication secrets in both local environment files. OpsPilot needs a 32+ character `JWT_SECRET` in `services/config-api/.env`; Jyotish needs `AUTH_SECRET` in its root `.env`. The launcher refuses known weak defaults. Ensure users have no real confidential data in demo accounts. Check the authentication and permission test cases before sharing links.
+
+**Start:** Open one PowerShell in OpsPilot root and execute `npm run dev:both`. It checks free ports, starts the existing Docker containers, waits for health checks, generates Prisma clients, deploys committed migrations (no reset/seed), builds for production, starts both apps and checks API/web responses. Then ngrok uses the fixed OpsPilot URL and cloudflared prints a temporary `*.trycloudflare.com` URL. Only the Next.js frontend is tunneled. No public Nest/DB/Redis tunnels.
+
+**Stop:** Press Ctrl+C in the same terminal. Child Node processes and tunnels are stopped; Docker containers and their **named volumes stay intact**. Do not use `docker compose down -v`. Apps are intentionally independent: a stopped tunnel or one failed app does not delete data or intentionally kill the other one.
+
+**Common errors:** If ports 3000/3001/4000/4001 are occupied, stop existing dev servers first; no automatic killing. If Docker cannot connect, launch Docker Desktop. If PostgreSQL fails its healthcheck, run `docker compose ps -a` and `docker compose logs postgres --tail=50` (or in Jyotish: `docker compose logs db --tail=50`). A missing Prisma dependency requires `npm install` in the corresponding repository. Ngrok requires local login/authtoken; only one tunnel can own the reserved domain. Install `cloudflared` for the second public site; without it, Jyotish remains local. Cloudflare quick tunnels are temporary and may be blocked by some networks. Do not paste keys or passwords into issue reports. If HTTPS sign-in fails, inspect the same-origin `/api` proxy and Secure cookies.
+
+**Targeted acceptance:** `npm run build` in both repos; check local 3000/3001, private API health at 4000/4001, both HTTPS links and guest access; then test OpsPilot login/workspaces/RBAC/draft→approve→publish/Redis/demo client, and Jyotish D1/D9/D10/dasha/report/login/history permissions/offline AI fallback. Start with fictitious test accounts; never expose private natal histories as public data.
