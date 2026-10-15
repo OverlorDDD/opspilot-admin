@@ -140,7 +140,7 @@ async function main(){
  launchNpm('op-api',['run',publicMode?'start':'dev','--workspace=@opspilot/config-api'],ops,opBackend);
  launchNpm('op-web',['run',publicMode?'start':'dev','--workspace=@opspilot/web'],ops,opWeb);
  if(both){
-  launchNpm('jy-api',['run','dev:api'],other,jyBackend); // backend source stays unchanged
+  launchNpm('jy-api',['run','start','--workspace=@jyotish/api'],other,jyBackend); // single-shot API, no public file watcher
   launchNpm('jy-web',['run',publicMode?'start':'dev','--workspace=@jyotish/web'],other,jyWeb);
  }
  await readiness(()=>httpReady(opURL+'/api/health/live'),'OpsPilot API',90000);
