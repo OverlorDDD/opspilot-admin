@@ -108,6 +108,7 @@ async function main(){
  if(both)requireInstall(resolve(other,'package.json'),'Jyotish repository (set JYOTISH_PATH)');
  if(!available('docker'))fail('Docker CLI unavailable. Start Docker Desktop.');
  if(publicMode&&!available('ngrok'))fail('Install ngrok, configure authtoken, and retry.');
+ if(publicMode)tool('ngrok',['config','check'],ops,true); // syntax/config preflight; credentials validated by actual tunnel handshake
  if(both&&!available('cloudflared'))say('cloudflared missing: Jyotish remains local until installed.');
  requireInstall(resolve(ops,'node_modules'),'OpsPilot dependencies; run npm install manually');
  if(both)requireInstall(resolve(other,'node_modules'),'Jyotish dependencies; run npm install manually');
