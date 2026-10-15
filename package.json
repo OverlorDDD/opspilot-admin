@@ -26,7 +26,9 @@
     "test": "npm run test --workspaces --if-present",
     "test:ci": "npm run test:ci --workspaces --if-present",
     "db:deploy": "npm run db:deploy --workspace=@opspilot/config-api",
-    "verify": "npm test && npm run build"
+    "verify": "npm test && npm run build",
+    "dev:public": "node tools/dual-launch.mjs ops-public",
+    "dev:both": "node tools/dual-launch.mjs both"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
