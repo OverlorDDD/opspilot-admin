@@ -33,7 +33,7 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   const port = Number(process.env.API_PORT ?? 4000);
-  await app.listen(port, "0.0.0.0");
+  await app.listen(port, process.env.API_HOST ?? "0.0.0.0");
   console.log(`OpsPilot API listening on port ${port}`);
 }
 
