@@ -87,7 +87,7 @@ async function readiness(check,label,maxMs=90000){
  fail(label+' not ready within '+Math.round(maxMs/1000)+' seconds. Check Docker and service logs.');
 }
 async function httpReady(url){
- try{const r=await fetch(url,{signal:AbortSignal.timeout(2500),redirect:'manual'});return r.status>=200&&r.status<500;}catch{return false;}
+ try{const r=await fetch(url,{signal:AbortSignal.timeout(2500),redirect:'manual'});return r.status>=200&&r.status<400;}catch{return false;}
 }
 function healthy(container){
  try{return tool('docker',['inspect','--format','{{.State.Health.Status}}',container],ops,true).trim()==='healthy';}catch{return false;}
