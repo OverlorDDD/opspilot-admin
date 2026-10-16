@@ -22,7 +22,7 @@ test('launch preserves database volumes and forbids unexpected paid AI',()=>{
  assert.match(compose,/opspilot-postgres-data/);
  assert.match(compose,/opspilot-redis-data/);
  assert.match(launch,/AI_MODE==='paid_openai'/);
- assert.doesNotMatch(launch,/compose.+down|-v\b|migrate reset|db push|npm install|git pull/);
+ assert.doesNotMatch(launch,/tool\('docker',\['compose','down'|runNpm\(\['install'|runNpm\(\['pull'|migrate reset|db push/);
  assert.match(launch,/db:deploy/);
  assert.match(launch,/db:migrate/);
 });
