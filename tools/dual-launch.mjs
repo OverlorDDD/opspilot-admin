@@ -148,17 +148,21 @@ async function main(){
  }
  await readiness(()=>httpReady(opURL+'/api/health/live'),'OpsPilot API',90000);
  await readiness(()=>httpReady('http://127.0.0.1:3000/'),'OpsPilot web',90000);
+ let jyHealthy=false;
  if(both){
-  await readiness(()=>httpReady(jyURL+'/api/health'),'Jyotish API',90000);
-  await readiness(()=>httpReady('http://127.0.0.1:3001/'),'Jyotish web',90000);
+  try{
+   await readiness(()=>httpReady(jyURL+'/api/health'),'Jyotish API',90000);
+   await readiness(()=>httpReady('http://127.0.0.1:3001/'),'Jyotish web',90000);
+   jyHealthy=true;
+  }catch(e){say('Jyotish unavailable: '+e.message+'; OpsPilot will remain online. Check jy-api/jy-web output.');}
  }
  say('OpsPilot local: http://localhost:3000');
- if(both)say('Jyotish local: http://localhost:3001');
+ if(both&&jyHealthy)say('Jyotish local: http://localhost:3001');
  if(publicMode){
   start('ngrok','ngrok',['http','3000','--url='+domain],ops,{},'tunnel');
   say('OpsPilot public (after ngrok connects): https://'+domain);
  }
- if(both&&available('cloudflared')){
+ if(both&&jyHealthy&&available('cloudflared')){
   start('cloudflare','cloudflared',['tunnel','--url','http://localhost:3001'],other,{},'tunnel');
   say('Waiting for a temporary Jyotish trycloudflare.com URL in cloudflared output.');
  }
