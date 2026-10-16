@@ -28,7 +28,8 @@
     "db:deploy": "npm run db:deploy --workspace=@opspilot/config-api",
     "verify": "npm test && npm run build",
     "dev:public": "node tools/dual-launch.mjs ops-public",
-    "dev:both": "node tools/dual-launch.mjs both"
+    "dev:both": "node tools/dual-launch.mjs both",
+    "test:launch": "node --test tools/dual-launch.test.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
