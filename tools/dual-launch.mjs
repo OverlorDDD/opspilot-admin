@@ -109,7 +109,7 @@ async function main(){
  if(!available('docker'))fail('Docker CLI unavailable. Start Docker Desktop.');
  if(publicMode&&!available('ngrok'))fail('Install ngrok, configure authtoken, and retry.');
  if(publicMode)tool('ngrok',['config','check'],ops,true); // syntax/config preflight; credentials validated by actual tunnel handshake
- if(both&&!available('cloudflared'))say('cloudflared missing: Jyotish remains local until installed.');
+ if(both&&!available('cloudflared'))say('cloudflared missing: Jyotish remains local without a public URL. Install cloudflared to expose it.');
  requireInstall(resolve(ops,'node_modules'),'OpsPilot dependencies; run npm install manually');
  if(both)requireInstall(resolve(other,'node_modules'),'Jyotish dependencies; run npm install manually');
  if(publicMode){
@@ -117,6 +117,8 @@ async function main(){
   if(secret.length<32||secret.includes('development-secret')||secret.includes('change-before'))fail('OpsPilot services/config-api/.env needs a unique JWT_SECRET of at least 32 characters before public access.');
  }
  if(both&&(jyEnv.AUTH_SECRET||process.env.AUTH_SECRET||'').length<32)fail('Jyotish root .env needs an AUTH_SECRET of at least 32 characters before public access.');
+ if(both&&publicMode&&(jyEnv.AI_MODE==='paid_openai'||process.env.AI_MODE==='paid_openai'))fail('Jyotish paid AI_MODE is blocked for public demos. Set AI_MODE=free or local in the Jyotish .env.');
+ if(both&&!existsSync(resolve(other,'.env')))fail('Jyotish root .env missing. Copy .env.example and configure it before launching both sites.');
  // Check app ports only; DB/Redis ports belong to Docker containers.
  for(const port of (both?[3000,4000,3001,4001]:[3000,4000]))await checkPort(port);
  say('Starting existing Docker Compose services; named volumes remain untouched.');
